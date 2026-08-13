@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DBN Mobile Tower Roll-Out Dashboard (Live Sync)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+<!-- jsPDF & AutoTable -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+<style>
+  :root{
+    --ink:#122036; --ink-soft:#3b4a63; --paper:#F3F4F1; --card:#FFFFFF; --line:#DCDFD9;
+    --teal:#0E6E6B; --teal-deep:#0A4F4D;
+    --amber:#D97706; --amber-bg:#FBF1DF;
+    --green:#2E7D4F; --green-bg:#E7F3EC;
+    --red:#DC2626; --red-bg:#FBEAE6;
+    --teal2:#0D9488; --teal2-bg:#E1F4F1;
+    --orange:#EA580C; --orange-bg:#FDEEE3;
+    --rose:#BE123C; --rose-bg:#FBE7EC;
+    --slate-bg:#EDEFE9;
+    --shadow: 0 1px 2px rgba(18,32,54,0.06), 0 6px 20px rgba(18,32,54,0.04);
+  }
+  *{box-sizing:border-box;}
+  body{background:var(--paper); color:var(--ink); font-family:'IBM Plex Sans', sans-serif; margin:0; padding:24px;}
+  .wrap{max-width:1320px; margin:0 auto;}
+
+  header.top{display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid var(--ink); padding-bottom:14px; margin-bottom:20px;}
+  .eyebrow{font-family:'IBM Plex Mono', monospace; font-size:11px; text-transform:uppercase; color:var(--teal-deep); font-weight:600; margin:0 0 4px;}
+  h1{font-family:'IBM Plex Sans Condensed', sans-serif; font-size:26px; margin:0; font-weight:700; color:var(--ink);}
+  h1 small{display:block; font-family:'IBM Plex Sans', sans-serif; font-size:13px; color:var(--ink-soft); font-weight:500; margin-top:4px;}
+  .report-meta{font-family:'IBM Plex Mono', monospace; font-size:12px; text-align:right; color:var(--ink-soft); display:flex; flex-direction:column; align-items:flex-end; gap:8px;}
+
+  .export-pdf-btn{
+    font-family:'IBM Plex Mono', monospace; font-size:12px; font-weight:600;
+    background:var(--teal-deep); color:#fff; border:none; padding:8px 14px; border-radius:6px; cursor:pointer;
+    display:inline-flex; align-items:center; gap:6px; box-shadow:var(--shadow); transition:background 0.2s;
+  }
+  .export-pdf-btn:hover{background:#073735;}
+
+  .sync-bar{
+    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;
+    background:var(--teal-deep); color:#EAF3F2; border-radius:8px; padding:12px 18px; margin-bottom:20px; font-size:12px;
+  }
+  .sync-btn{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; font-weight:600; background:#EAF3F2; color:var(--teal-deep);
+    padding:8px 14px; border-radius:6px; cursor:pointer; border:none; display:inline-block; transition:all 0.2s;
+  }
+  .sync-btn:hover{background:#fff;}
+
+  .scope-switcher{display:flex; gap:10px; margin-bottom:20px;}
+  .scope-btn{
+    font-family:'IBM Plex Sans Condensed', sans-serif; font-size:16px; font-weight:700;
+    padding:10px 20px; border-radius:8px; cursor:pointer; background:var(--card); border:2px solid var(--line); color:var(--ink-soft);
+    box-shadow:var(--shadow); transition:all 0.2s ease;
+  }
+  .scope-btn.active{background:var(--teal-deep); color:#fff; border-color:var(--teal-deep);}
+
+  .filterbar{
+    display:flex; gap:12px; flex-wrap:wrap; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; margin-bottom:20px; box-shadow:var(--shadow); align-items:flex-end;
+  }
+  .field{display:flex; flex-direction:column; gap:6px; min-width:170px;}
+  .field label{font-family:'IBM Plex Mono', monospace; font-size:10.5px; text-transform:uppercase; color:var(--ink-soft); font-weight:600;}
+  select, input{
+    font-family:'IBM Plex Sans', sans-serif; font-size:13px; color:var(--ink); padding:8px 12px; border-radius:6px; border:1px solid #C7CBC3; background:#fff;
+  }
+  select:focus, input:focus{outline:2px solid var(--teal);}
+  .reset-btn{
+    font-family:'IBM Plex Mono', monospace; font-size:11.5px; font-weight:600; text-transform:uppercase;
+    background:var(--ink); color:#fff; border:none; border-radius:6px; padding:9px 16px; cursor:pointer;
+  }
+  .reset-btn:hover{background:var(--teal-deep);}
+  .filter-count{font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--ink-soft); margin-left:auto; align-self:center;}
+
+  .kpi-row{display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; margin-bottom:20px;}
+  .kpi{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; box-shadow:var(--shadow); position:relative; overflow:hidden;}
+  .kpi::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--teal);}
+  .kpi.k-green::before{background:var(--green);}
+  .kpi.k-amber::before{background:var(--amber);}
+  .kpi.k-red::before{background:var(--red);}
+  .kpi.k-teal2::before{background:var(--teal2);}
+  .kpi.k-orange::before{background:var(--orange);}
+  .kpi.k-rose::before{background:var(--rose);}
+  .kpi .lbl{font-family:'IBM Plex Mono', monospace; font-size:10px; text-transform:uppercase; color:var(--ink-soft); font-weight:600;}
+  .kpi .val{font-family:'IBM Plex Sans Condensed', sans-serif; font-size:28px; font-weight:700; margin-top:4px; line-height:1;}
+  .kpi .sub{font-size:11px; color:var(--ink-soft); margin-top:6px;}
+
+  .charts-row{display:grid; grid-template-columns:1.5fr 1fr; gap:16px; margin-bottom:20px;}
+  .panel{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; box-shadow:var(--shadow);}
+  .panel h3{font-family:'IBM Plex Sans Condensed', sans-serif; font-size:15px; margin:0 0 12px; color:var(--ink);}
+  .chart-box{position:relative; height:290px; width:100%;}
+
+  .table-card{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; box-shadow:var(--shadow);}
+  .table-header-bar{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:12px;}
+  .tabs{display:flex; gap:6px; flex-wrap:wrap;}
+  
+  .tab-btn{
+    font-family:'IBM Plex Mono', monospace; font-size:11px; padding:8px 14px; border-radius:6px; cursor:pointer; background:var(--slate-bg); border:1px solid var(--line); color:var(--ink-soft); font-weight:600; transition:all 0.2s;
+  }
+  .tab-btn.active{color:#fff; border-color:transparent;}
+  .tab-btn.tab-TowerCommissioned.active{background:var(--green);}
+  .tab-btn.tab-WIP.active{background:var(--amber);}
+  .tab-btn.tab-YTS.active{background:var(--rose);}
+  .tab-btn.tab-LandAllocationPending.active{background:var(--red);}
+  .tab-btn.tab-TotalSitesPlanned.active{background:var(--teal-deep);}
+  .tab-btn.tab-TotalLandAllocated.active{background:var(--teal2);}
+  .tab-btn.tab-LandAllocated.active{background:var(--teal2);}
+  .tab-btn.tab-DBNApprovalPending.active{background:var(--orange);}
+  
+  .table-scroll{max-height:420px; overflow-y:auto; overflow-x:auto; border-top:1px solid var(--line); -webkit-overflow-scrolling:touch;}
+  table{width:100%; min-width:640px; border-collapse:collapse; font-size:12.8px;}
+  th, td{padding:8px 10px; border-bottom:1px solid var(--line); text-align:left;}
+  th{font-family:'IBM Plex Mono', monospace; font-size:10.5px; text-transform:uppercase; background:var(--paper); position:sticky; top:0; z-index:2;}
+  
+  .pill{display:inline-block; padding:3px 10px; border-radius:12px; font-size:10.5px; font-weight:700; font-family:'IBM Plex Mono', monospace;}
+  .pill-TowerCommissioned{background:var(--green-bg); color:var(--green); border:1px solid var(--green);}
+  .pill-LandAllocated{background:var(--teal2-bg); color:var(--teal2); border:1px solid var(--teal2);}
+  .pill-WIP{background:var(--amber-bg); color:var(--amber); border:1px solid var(--amber);}
+  .pill-DBNApprovalPending{background:var(--orange-bg); color:var(--orange); border:1px solid var(--orange);}
+  .pill-YTS{background:var(--rose-bg); color:var(--rose); border:1px solid var(--rose);}
+  .pill-LandAllocationPending{background:var(--red-bg); color:var(--red); border:1px solid var(--red);}
+
+  tr.row-TowerCommissioned{background:#f4faf6;}
+  tr.row-WIP{background:#fffdf5;}
+  tr.row-YTS{background:#fff8f7;}
+  tr.row-LandAllocationPending{background:#fff8f7;}
+
+  .pager{display:flex; justify-content:space-between; align-items:center; margin-top:12px; font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--ink-soft);}
+  .pager button{padding:6px 12px; font-family:'IBM Plex Mono', monospace; font-weight:600; border:1px solid var(--line); background:#fff; border-radius:4px; cursor:pointer;}
+  .pager button:disabled{opacity:.4; cursor:not-allowed;}
+
+  /* ===== Chhattisgarh Shasan logo & watermark ===== */
+  .watermark{
+    position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:480px; max-width:70vw; opacity:0.05; z-index:0; pointer-events:none; user-select:none;
+  }
+  .wrap{position:relative; z-index:1;}
+  .header-title-row{display:flex; align-items:center; gap:14px;}
+  .cg-logo{height:56px; width:56px; object-fit:contain; flex-shrink:0;}
+
+  /* ===== Mobile optimization ===== */
+  @media (max-width:820px){
+    body{padding:14px;}
+    .wrap{max-width:100%;}
+
+    header.top{flex-direction:column; align-items:flex-start; gap:12px; padding-bottom:12px;}
+    .cg-logo{height:42px; width:42px;}
+    .watermark{width:300px;}
+    h1{font-size:19px;}
+    h1 small{font-size:12px;}
+    .report-meta{align-items:flex-start; text-align:left; width:100%;}
+    header.top .export-pdf-btn{width:100%; justify-content:center;}
+
+    .sync-bar{flex-direction:column; align-items:flex-start; gap:8px; padding:12px;}
+    .sync-btn{width:100%;}
+
+    .scope-switcher{flex-wrap:wrap; gap:8px;}
+    .scope-btn{flex:1 1 100%; font-size:14px; padding:10px 14px;}
+
+    .filterbar{flex-direction:column; align-items:stretch; padding:14px;}
+    .field{min-width:100%; width:100%;}
+    .field[style]{border-right:none !important; padding-right:0 !important;}
+    .filterbar select, .filterbar input{width:100%;}
+    .filter-count{margin-left:0; align-self:flex-start;}
+    .reset-btn{width:100%;}
+
+    .kpi-row{grid-template-columns:repeat(2, 1fr); gap:10px;}
+    .kpi{padding:12px;}
+    .kpi .val{font-size:22px;}
+
+    .charts-row{grid-template-columns:1fr; gap:12px;}
+    .chart-box{height:220px;}
+
+    .table-header-bar{flex-direction:column; align-items:stretch; gap:10px;}
+    .table-header-bar .export-pdf-btn{width:100%; justify-content:center;}
+    .tabs{flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:6px;}
+    .tab-btn{flex:0 0 auto;}
+
+    .pager{flex-direction:column; align-items:flex-start; gap:10px;}
+    .pager div{display:flex; gap:8px; width:100%;}
+    .pager button{flex:1;}
+  }
+
+  @media (max-width:420px){
+    h1{font-size:17px;}
+    .kpi-row{grid-template-columns:repeat(2, 1fr); gap:8px;}
+    .kpi .val{font-size:19px;}
+    table{min-width:560px; font-size:11.5px;}
+  }
+
+  /* Login gate */
+  #login-gate{
+    position:fixed; inset:0; background:var(--paper); z-index:9999;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .login-card{
+    background:var(--card); border:1px solid var(--line); border-radius:10px;
+    box-shadow:var(--shadow); padding:36px 34px; width:100%; max-width:360px;
+  }
+  .login-card .eyebrow{margin-bottom:2px;}
+  .login-card h1{margin-bottom:20px;}
+  .login-logo-wrap{display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:18px;}
+  .login-logo-wrap img{width:64px; height:64px; margin-bottom:10px;}
+  .login-dept{font-family:'IBM Plex Sans Condensed', sans-serif; font-size:14px; font-weight:700; color:var(--ink); line-height:1.3;}
+  .login-field{display:flex; flex-direction:column; gap:6px; margin-bottom:16px;}
+  .login-field label{font-family:'IBM Plex Mono', monospace; font-size:10.5px; text-transform:uppercase; color:var(--ink-soft); font-weight:600;}
+  .login-field input{font-family:'IBM Plex Sans', sans-serif; font-size:14px; color:var(--ink); padding:10px 12px; border-radius:6px; border:1px solid #C7CBC3; background:#fff; width:100%;}
+  .login-field input:focus{outline:2px solid var(--teal);}
+  .login-btn{
+    width:100%; font-family:'IBM Plex Mono', monospace; font-size:12.5px; font-weight:600; text-transform:uppercase;
+    background:var(--teal-deep); color:#fff; border:none; border-radius:6px; padding:11px 16px; cursor:pointer; margin-top:6px;
+  }
+  .login-btn:hover{background:#073735;}
+  .login-error{color:var(--red); font-size:12px; margin-top:12px; display:none; font-family:'IBM Plex Sans', sans-serif;}
+  #dashboard-content{display:none;}
+</style>
+</head>
+<body>
+
+<div id="login-gate">
+  <div class="login-card">
+    <div class="login-logo-wrap">
+      <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Coat_of_arms_of_Chhattisgarh.svg?width=200" alt="Chhattisgarh Shasan">
+      <div class="login-dept">Department of Electronics &amp; Information Technology</div>
+    </div>
+    <p class="eyebrow">DBN-Funded &nbsp;·&nbsp; Chhattisgarh</p>
+    <h1>Tower Roll-Out Dashboard<small>Sign in to continue</small></h1>
+    <form id="login-form" autocomplete="off">
+      <div class="login-field">
+        <label for="login-user">User ID</label>
+        <input type="text" id="login-user" autocomplete="username" required>
+      </div>
+      <div class="login-field">
+        <label for="login-pass">Password</label>
+        <input type="password" id="login-pass" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="login-btn">Sign In</button>
+      <p class="login-error" id="login-error">Invalid User ID or Password. Please try again.</p>
+    </form>
+  </div>
+</div>
+
+<div id="dashboard-content">
+<img class="watermark" src="https://commons.wikimedia.org/wiki/Special:FilePath/Coat_of_arms_of_Chhattisgarh.svg?width=500" alt="" aria-hidden="true">
+<div class="wrap" id="report-content">
+  <header class="top">
+    <div class="header-title-row">
+      <img class="cg-logo" src="https://commons.wikimedia.org/wiki/Special:FilePath/Coat_of_arms_of_Chhattisgarh.svg?width=200" alt="Chhattisgarh Shasan">
+      <div>
+        <p class="eyebrow">DBN-Funded &nbsp;·&nbsp; Chhattisgarh</p>
+        <h1>Mobile Tower Roll-Out Progress Dashboard
+        </h1>
+      </div>
+    </div>
+    <div class="report-meta">
+      <div>Report Date: <b id="report-date-display">11 Aug 2026</b></div>
+      <button class="export-pdf-btn" onclick="exportCardsChartsPDF()">📄 Download Summary PDF</button>
+    </div>
+  </header>
+
+  <!-- Sync Bar -->
+  <div class="sync-bar">
+    <div>
+      <button class="sync-btn" onclick="fetchGoogleSheetData()">🔄 Sync Live Data</button>
+      <span id="sync-status" style="margin-left:10px; font-family:'IBM Plex Mono', monospace;">Connecting to Google Sheets...</span>
+    </div>
+  </div>
+
+  <!-- Scope Switcher -->
+  <div class="scope-switcher">
+    <button class="scope-btn active" id="scope-1757" onclick="switchScope('1757')">List of 1,757 Core Sites</button>
+    <button class="scope-btn" id="scope-577" onclick="switchScope('577')">List of 577 New Sites (4G Saturation)</button>
+  </div>
+
+  <!-- Filters Bar -->
+  <div class="filterbar">
+    <div class="field" style="min-width:210px; border-right:1px solid var(--line); padding-right:12px;">
+      <label for="f-tab-dropdown"><b>Select Tab / Status List</b></label>
+      <select id="f-tab-dropdown" onchange="onTabDropdownChange(this.value)" style="font-weight:600; background:#EAF3F2; border-color:var(--teal);"></select>
+    </div>
+    <div class="field"><label for="f-scheme">Scheme</label><select id="f-scheme" onchange="applyFilters()"></select></div>
+    <div class="field"><label for="f-district">District</label><select id="f-district" onchange="onDistrictChange()"></select></div>
+    <div class="field"><label for="f-block">Block</label><select id="f-block" onchange="applyFilters()"></select></div>
+    <div class="field" style="flex:1; min-width:180px;"><label for="f-search">Search Village / Block / LGD Code</label><input id="f-search" type="text" placeholder="Type to search..." oninput="applyFilters()"></div>
+    <button class="reset-btn" onclick="resetFilters()">Reset Filters</button>
+    <div class="filter-count" id="filter-count"></div>
+  </div>
+
+  <!-- Dynamic KPI Cards -->
+  <div class="kpi-row" id="kpi-row"></div>
+
+  <!-- Dynamic Charts -->
+  <div class="charts-row">
+    <div class="panel">
+      <h3>Scheme-wise progress</h3>
+      <div class="chart-box"><canvas id="chart-scheme"></canvas></div>
+    </div>
+    <div class="panel">
+      <h3>Status split</h3>
+      <div class="chart-box"><canvas id="chart-status"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Data Table with Color Coded Tabs -->
+  <div class="table-card">
+    <div class="table-header-bar">
+      <div class="tabs" id="status-tabs"></div>
+      <button class="export-pdf-btn" onclick="exportFullPDF()" style="font-size:11px; padding:6px 12px;">📄 Download Complete List PDF</button>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:40px;">#</th>
+            <th>Scheme</th>
+            <th>District</th>
+            <th>Block</th>
+            <th>Village</th>
+            <th style="width:120px;">Village LGD Code</th>
+            <th>Status Category</th>
+            <th>Remark</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="pager">
+      <span id="pager-info"></span>
+      <div>
+        <button id="prev-btn" onclick="changePage(-1)">‹ Prev</button>
+        <button id="next-btn" onclick="changePage(1)">Next ›</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ===== SUPABASE CONFIGURATION =====
+// Paste your Supabase Publishable/anon key in SUPABASE_KEY below.
+const SUPABASE_URL = 'https://oogcwykemopgedtwfkiu.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_z33kHmmU1Qo6aKE5ZH21_A_UNuK8H8M';
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let SITES_1757 = [];
+let SITES_577 = [];
+
+let currentScope = '1757';
+let currentCategory = 'Total Sites Planned';
+let currentPage = 1;
+const pageSize = 50;
+let currentTabFilteredData = [];
+
+let chartSchemeObj = null;
+let chartStatusObj = null;
+if (window.ChartDataLabels) Chart.register(window.ChartDataLabels);
+
+// Safe Robust Column Name Fetcher (Handles spaces, capitalization differences)
+function getColVal(row, possibleNames) {
+  if (!row) return '';
+  const rowKeys = Object.keys(row);
+  for (let key of rowKeys) {
+    let cleanKey = key.trim().toLowerCase();
+    for (let p of possibleNames) {
+      if (cleanKey === p.toLowerCase()) {
+        return (row[key] !== null && row[key] !== undefined) ? row[key].toString().trim() : '';
+      }
+    }
+  }
+  return '';
+}
+
+// gid of each tab in the master Google Sheet (Sheets -> right-click tab -> Copy link -> #gid=XXXX)
+let sheetsLoaded = { s1757: false, s577: false };
+
+// Supabase REST/API normally returns a limited number of rows per request.
+// Fetch in batches so the dashboard can load more than 1,000 records.
+async function fetchAllRows(tableName, batchSize = 1000) {
+  const allRows = [];
+  let from = 0;
+  while (true) {
+    const to = from + batchSize - 1;
+    const { data, error } = await supabaseClient
+      .from(tableName)
+      .select('*')
+      .range(from, to);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+
+    allRows.push(...data);
+    if (data.length < batchSize) break;
+    from += batchSize;
+  }
+  return allRows;
+}
+
+function getFormattedTodayDate() {
+  const today = new Date();
+  const day = today.getDate();
+  const month = today.toLocaleString('en-GB', { month: 'short' });
+  const year = today.getFullYear();
+  return `${day} ${month} ${year}`;
+}
+
+// Official Chhattisgarh Shasan emblem (Wikimedia Commons, public domain government insignia)
+const LOGO_URL = 'https://commons.wikimedia.org/wiki/Special:FilePath/Coat_of_arms_of_Chhattisgarh.svg?width=400';
+let logoDataUrl = null;
+
+function preloadLogoForPDF() {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = function () {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || 400;
+      canvas.height = img.naturalHeight || 400;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      logoDataUrl = canvas.toDataURL('image/png');
+    } catch (e) {
+      logoDataUrl = null; // canvas got tainted / blocked - PDF export will just skip the watermark
+    }
+  };
+  img.onerror = function () { logoDataUrl = null; };
+  img.src = LOGO_URL;
+}
+
+// Draws the emblem as a faint centered watermark on whichever PDF page is currently active
+function addWatermarkToPage(doc) {
+  if (!logoDataUrl) return;
+  const pageWidth = doc.internal.pageSize.width;
+  const pageHeight = doc.internal.pageSize.height;
+  const size = Math.min(pageWidth, pageHeight) * 0.55;
+  const x = (pageWidth - size) / 2;
+  const y = (pageHeight - size) / 2;
+
+  doc.setGState(new doc.GState({ opacity: 0.07 }));
+  doc.addImage(logoDataUrl, 'PNG', x, y, size, size);
+  doc.setGState(new doc.GState({ opacity: 1 }));
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  const dateEl = document.getElementById('report-date-display');
+  if (dateEl) dateEl.innerText = getFormattedTodayDate();
+  preloadLogoForPDF();
+  fetchGoogleSheetData();
+});
+
+async function fetchGoogleSheetData() {
+  const statusEl = document.getElementById('sync-status');
+  statusEl.innerText = "Fetching latest live data from Supabase...";
+  sheetsLoaded = { s1757: false, s577: false };
+
+  if (!SUPABASE_KEY || SUPABASE_KEY === 'PASTE_YOUR_SUPABASE_PUBLISHABLE_KEY_HERE') {
+    statusEl.innerText = "Supabase key not configured. Open this HTML and paste your Publishable/anon key in SUPABASE_KEY.";
+    return;
+  }
+
+  try {
+    const [rows1757, rows577] = await Promise.all([
+      fetchAllRows('sites_1757'),
+      fetchAllRows('sites_577')
+    ]);
+
+    SITES_1757 = processSheet1757Rows(rows1757);
+    SITES_577 = processSheet577Rows(rows577);
+    sheetsLoaded = { s1757: true, s577: true };
+
+    statusEl.innerText = `Last Synced: ${new Date().toLocaleTimeString()} | 1757: ${SITES_1757.length} | 577: ${SITES_577.length}`;
+    initFilterOptions();
+    applyFilters();
+  } catch (error) {
+    console.error('Supabase data load error:', error);
+    statusEl.innerText = `Error loading Supabase data: ${error.message || error}`;
+  }
+}
+
+// "List of 1757 sites" tab: Scheme, District, Block, Village, Village LGD Code,
+// Commissioning/On Air Status (Yes/No), Yet to Start (Yes/No), Work in Progress (Yes/No), Remark
+function processSheet1757Rows(data) {
+  const out = [];
+  data.forEach((rowObj, i) => {
+    const village = getColVal(rowObj, ['Village', 'Village Name']);
+    if (!village) return; // skip blank/empty rows - fixes inflated totals after sync
+
+    let scheme = getColVal(rowObj, ['Scheme', 'Scheme Name']);
+    if (scheme.toUpperCase() === 'LWEII') scheme = 'LWE-II';
+    if (scheme.toUpperCase() === 'ASPIRATIONAL') scheme = 'Aspirational District';
+
+    const district = getColVal(rowObj, ['District', 'District Name']);
+    const block = getColVal(rowObj, ['Block', 'Sub District']);
+    const lgdCode = getColVal(rowObj, ['Village LGD Code', 'LGD Code', 'Village Code', 'Site ID']) || `LGD-${100000 + i}`;
+    const remark = getColVal(rowObj, ['Remark', 'Remarks']);
+    const remLower = remark.toLowerCase();
+
+    const comm = getColVal(rowObj, ['Commissioning/On Air Status (Yes/No)', 'Commissioned', 'On Air']).toLowerCase();
+    const wip = getColVal(rowObj, ['Work in Progress (Yes/No)', 'WIP']).toLowerCase();
+
+    let category = 'YTS';
+    if (comm === 'yes' || remLower.includes('commissioned') || remLower.includes('on air')) {
+      category = 'Tower Commissioned';
+    } else if (remLower.includes('land allocation pending') || remLower.includes('forest case') || remLower.includes('noc awaited')) {
+      category = 'Land Allocation Pending';
+    } else if (remLower.includes('dbn') || remLower.includes('approval')) {
+      category = 'DBN Approval Pending';
+    } else if (wip === 'yes' || remLower.includes('wip') || remLower.includes('work in progress')) {
+      category = 'WIP';
+    }
+
+    out.push({ lgdCode, scheme: scheme || 'General Scheme', district, block, village, category, remark });
+  });
+  return out;
+}
+
+// "List of 577 sites" tab: Scheme, District, Sub District, Village Name, Village code,
+// Cluster portal ID, Remark ("Land Allotted"/blank = land status), Status ("Work in Progress"/blank)
+function processSheet577Rows(data) {
+  const out = [];
+  data.forEach((rowObj, i) => {
+    const village = getColVal(rowObj, ['Village Name', 'Village']);
+    if (!village) return; // skip blank/empty rows
+
+    const district = getColVal(rowObj, ['District', 'District Name']);
+    const block = getColVal(rowObj, ['Sub District', 'Block']);
+    const lgdCode = getColVal(rowObj, ['Village code', 'Village Code', 'Village LGD Code', 'LGD Code'])
+      || getColVal(rowObj, ['Cluster portal ID'])
+      || `577-${100000 + i}`;
+
+    const landRemark = getColVal(rowObj, ['Remark', 'Remarks']);
+    const statusVal = getColVal(rowObj, ['Status']);
+    const landLower = landRemark.toLowerCase();
+    const statusLower = statusVal.toLowerCase();
+
+    let category = 'YTS';
+    if (!landLower.includes('allot')) {
+      category = 'Land Allocation Pending';
+    } else if (statusLower.includes('commission') || statusLower.includes('on air')) {
+      category = 'Tower Commissioned';
+    } else if (statusLower.includes('progress') || statusLower.includes('wip')) {
+      category = 'WIP';
+    }
+
+    const remark = statusVal ? `${landRemark} - ${statusVal}` : landRemark;
+
+    out.push({ lgdCode, scheme: '4G Saturation', district, block, village, category, remark });
+  });
+  return out;
+}
+
+function getActiveScopeData() {
+  return currentScope === '1757' ? SITES_1757 : SITES_577;
+}
+
+function switchScope(scope) {
+  currentScope = scope;
+  document.getElementById('scope-1757').classList.toggle('active', scope === '1757');
+  document.getElementById('scope-577').classList.toggle('active', scope === '577');
+  currentCategory = 'Total Sites Planned';
+  currentPage = 1;
+  initFilterOptions();
+  applyFilters();
+}
+
+function switchStatusTab(category) {
+  currentCategory = category;
+  renderTabs();
+  currentPage = 1;
+  applyFilters();
+}
+
+function onTabDropdownChange(val) {
+  switchStatusTab(val);
+}
+
+function renderTabs() {
+  let tabs = [];
+  if (currentScope === '1757') {
+    tabs = ['Total Sites Planned', 'Land Allocated', 'Tower Commissioned', 'Land Allocation Pending', 'DBN Approval Pending', 'WIP', 'YTS'];
+  } else {
+    tabs = ['Total Sites Planned', 'Total Land Allocated', 'WIP', 'YTS', 'Land Allocation Pending'];
+  }
+
+  const container = document.getElementById('status-tabs');
+  container.innerHTML = tabs.map(tab => {
+    const classSanitized = tab.replace(/\s+/g, '');
+    return `<div class="tab-btn tab-${classSanitized} ${currentCategory === tab ? 'active' : ''}" onclick="switchStatusTab('${tab}')">${tab}</div>`;
+  }).join('');
+
+  const drop = document.getElementById('f-tab-dropdown');
+  drop.innerHTML = tabs.map(tab => `<option value="${tab}" ${currentCategory === tab ? 'selected' : ''}>${tab}</option>`).join('');
+}
+
+function initFilterOptions() {
+  const scopeData = getActiveScopeData();
+  const schemes = ['All Schemes', ...new Set(scopeData.map(d => d.scheme).filter(Boolean))].sort(alphaSort);
+  const districts = ['All Districts', ...new Set(scopeData.map(d => d.district).filter(Boolean))].sort(alphaSort);
+
+  populateSelect('f-scheme', schemes);
+  populateSelect('f-district', districts);
+  updateBlockOptions();
+  renderTabs();
+}
+
+function alphaSort(a, b) {
+  if (a === 'All Schemes' || a === 'All Districts' || a === 'All Blocks') return -1;
+  if (b === 'All Schemes' || b === 'All Districts' || b === 'All Blocks') return 1;
+  return a.localeCompare(b);
+}
+
+// Blocks are scoped to the currently selected district only, sorted A-Z
+function updateBlockOptions() {
+  const scopeData = getActiveScopeData();
+  const fDistrict = document.getElementById('f-district').value || 'All Districts';
+
+  const districtScopedData = fDistrict === 'All Districts'
+    ? scopeData
+    : scopeData.filter(d => d.district === fDistrict);
+
+  const blocks = ['All Blocks', ...new Set(districtScopedData.map(d => d.block).filter(Boolean))].sort(alphaSort);
+  populateSelect('f-block', blocks);
+}
+
+function onDistrictChange() {
+  updateBlockOptions();
+  applyFilters();
+}
+
+function populateSelect(id, list, currentValue = null) {
+  const select = document.getElementById(id);
+  select.innerHTML = list.map(item => `<option value="${item}">${item}</option>`).join('');
+  if (currentValue && list.includes(currentValue)) select.value = currentValue;
+}
+
+function resetFilters() {
+  document.getElementById('f-scheme').value = 'All Schemes';
+  document.getElementById('f-district').value = 'All Districts';
+  document.getElementById('f-block').value = 'All Blocks';
+  document.getElementById('f-search').value = '';
+  currentCategory = 'Total Sites Planned';
+  initFilterOptions();
+  applyFilters();
+}
+
+function applyFilters() {
+  const fScheme = document.getElementById('f-scheme').value;
+  const fDistrict = document.getElementById('f-district').value;
+  const fBlock = document.getElementById('f-block').value;
+  const fSearch = document.getElementById('f-search').value.toLowerCase().trim();
+
+  const scopeData = getActiveScopeData();
+
+  const dropdownFiltered = scopeData.filter(d => {
+    if (fScheme !== 'All Schemes' && d.scheme !== fScheme) return false;
+    if (fDistrict !== 'All Districts' && d.district !== fDistrict) return false;
+    if (fBlock !== 'All Blocks' && d.block !== fBlock) return false;
+    if (fSearch && !d.village.toLowerCase().includes(fSearch) && !d.block.toLowerCase().includes(fSearch) && !d.lgdCode.toLowerCase().includes(fSearch)) return false;
+    return true;
+  });
+
+  currentTabFilteredData = dropdownFiltered.filter(d => {
+    if (currentCategory === 'Total Sites Planned') return true;
+    if (currentCategory === 'Land Allocated') return d.category === 'DBN Approval Pending' || d.category === 'YTS' || d.category === 'WIP' || d.category === 'Tower Commissioned';
+    if (currentCategory === 'Total Land Allocated') return d.category === 'WIP' || d.category === 'YTS' || d.category === 'Tower Commissioned';
+    return d.category === currentCategory;
+  });
+
+  document.getElementById('filter-count').innerHTML = `Showing <b>${currentTabFilteredData.length}</b> sites in [${currentCategory}]`;
+  renderKPIs(dropdownFiltered);
+  renderCharts(currentTabFilteredData);
+  renderTable(currentTabFilteredData);
+}
+
+// Holds the last-rendered KPI cards in structured form so the PDF export
+// can redraw the exact same cards (label, value, sub, color) as on screen.
+let lastKPIData = [];
+
+// RGB triplets matching the CSS color variables used by .kpi accent bars
+const KPI_COLOR_RGB = {
+  default: [14, 110, 107],   // var(--teal)
+  green:   [46, 125, 79],    // var(--green)
+  amber:   [217, 119, 6],    // var(--amber)
+  red:     [220, 38, 38],    // var(--red)
+  teal2:   [13, 148, 136],   // var(--teal2)
+  orange:  [234, 88, 12],    // var(--orange)
+  rose:    [190, 18, 60]     // var(--rose)
+};
+
+function renderKPIs(baseFiltered) {
+  // Safe math division handling
+  const total = (baseFiltered && baseFiltered.length > 0) ? baseFiltered.length : 0;
+  const kpiRow = document.getElementById('kpi-row');
+
+  const calcPercent = (count) => {
+    if (total === 0 || !count) return '0';
+    const pct = (count / total) * 100;
+    if (pct > 0 && pct < 1) return pct.toFixed(1); // avoid showing "0%" for small non-zero counts
+    return Math.round(pct).toString();
+  };
+
+  let cards = [];
+
+  if (currentScope === '1757') {
+    const commissioned = baseFiltered.filter(d => d.category === 'Tower Commissioned').length;
+    const landPending = baseFiltered.filter(d => d.category === 'Land Allocation Pending').length;
+    const dbnPending = baseFiltered.filter(d => d.category === 'DBN Approval Pending').length;
+    const wip = baseFiltered.filter(d => d.category === 'WIP').length;
+    const yts = baseFiltered.filter(d => d.category === 'YTS').length;
+    const landAllocated = baseFiltered.filter(d => d.category === 'DBN Approval Pending' || d.category === 'YTS' || d.category === 'WIP' || d.category === 'Tower Commissioned').length;
+
+    cards = [
+      { label: 'Total Sites Planned',     value: total,        sub: null,                              colorKey: 'default' },
+      { label: 'Land Allocated',          value: landAllocated,sub: null,                              colorKey: 'teal2'   },
+      { label: 'Tower Commissioned',      value: commissioned, sub: `${calcPercent(commissioned)}%`,   colorKey: 'green'   },
+      { label: 'Land Allocation Pending', value: landPending,  sub: `${calcPercent(landPending)}%`,    colorKey: 'red'     },
+      { label: 'DBN Approval Pending',    value: dbnPending,   sub: `${calcPercent(dbnPending)}%`,     colorKey: 'orange'  },
+      { label: 'WIP',                     value: wip,          sub: `${calcPercent(wip)}%`,            colorKey: 'amber'   },
+      { label: 'YTS',                     value: yts,          sub: `${calcPercent(yts)}%`,            colorKey: 'rose'    }
+    ];
+  } else {
+    const landAllocated = baseFiltered.filter(d => d.category === 'WIP' || d.category === 'YTS' || d.category === 'Tower Commissioned').length;
+    const wip = baseFiltered.filter(d => d.category === 'WIP').length;
+    const yts = baseFiltered.filter(d => d.category === 'YTS').length;
+    const landPending = baseFiltered.filter(d => d.category === 'Land Allocation Pending').length;
+
+    cards = [
+      { label: 'Total Sites Planned',     value: total,         sub: '100%',                          colorKey: 'default' },
+      { label: 'Total Land Allocated',    value: landAllocated, sub: `${calcPercent(landAllocated)}%`, colorKey: 'teal2'   },
+      { label: 'Work in Progress (WIP)',  value: wip,           sub: `${calcPercent(wip)}%`,           colorKey: 'amber'   },
+      { label: 'Yet To Start (YTS)',      value: yts,           sub: `${calcPercent(yts)}%`,           colorKey: 'rose'    },
+      { label: 'Land Allocation Pending', value: landPending,   sub: `${calcPercent(landPending)}%`,   colorKey: 'red'     }
+    ];
+  }
+
+  lastKPIData = cards;
+
+  const classForColor = { default: '', green: 'k-green', amber: 'k-amber', red: 'k-red', teal2: 'k-teal2', orange: 'k-orange', rose: 'k-rose' };
+  kpiRow.innerHTML = cards.map(c => `
+    <div class="kpi ${classForColor[c.colorKey]}">
+      <div class="lbl">${c.label}</div>
+      <div class="val">${c.value}</div>
+      ${c.sub !== null ? `<div class="sub">${c.sub}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+// Draws the KPI cards onto the PDF (mirrors the on-screen kpi-row) and
+// returns the Y position immediately below the cards.
+function drawKPICardsPDF(doc, startY) {
+  if (!lastKPIData.length) return startY;
+
+  const marginLeft = 40, marginRight = 40;
+  const pageWidth = doc.internal.pageSize.width;
+  const contentWidth = pageWidth - marginLeft - marginRight;
+  const gap = 10;
+  const n = lastKPIData.length;
+  const cardW = (contentWidth - gap * (n - 1)) / n;
+  const cardH = 54;
+  let x = marginLeft;
+
+  lastKPIData.forEach(kpi => {
+    const rgb = KPI_COLOR_RGB[kpi.colorKey] || KPI_COLOR_RGB.default;
+
+    // Card background + border
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(220, 223, 217);
+    doc.setLineWidth(0.75);
+    doc.roundedRect(x, startY, cardW, cardH, 3, 3, 'FD');
+
+    // Left accent bar
+    doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+    doc.rect(x, startY, 3, cardH, 'F');
+
+    // Label
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.5);
+    doc.setTextColor(59, 74, 99);
+    doc.text(kpi.label.toUpperCase(), x + 8, startY + 13, { maxWidth: cardW - 12 });
+
+    // Value
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(17);
+    doc.setTextColor(18, 32, 54);
+    doc.text(String(kpi.value), x + 8, startY + 34);
+
+    // Sub (percentage)
+    if (kpi.sub) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(59, 74, 99);
+      doc.text(kpi.sub, x + 8, startY + 46);
+    }
+
+    x += cardW + gap;
+  });
+
+  return startY + cardH + 16;
+}
+
+// Colors matched to the tab/category accent colors used across KPI cards, pills & tab buttons
+const CATEGORY_COLORS = {
+  'Total Sites Planned': '#0A4F4D',
+  'Land Allocated': '#0D9488',
+  'Total Land Allocated': '#0D9488',
+  'Tower Commissioned': '#2E7D4F',
+  'Land Allocation Pending': '#DC2626',
+  'DBN Approval Pending': '#EA580C',
+  'WIP': '#D97706',
+  'YTS': '#BE123C'
+};
+const CATEGORY_COLOR_FALLBACK = '#0E6E6B';
+const SCHEME_PALETTE = ['#0A4F4D', '#2E7D4F', '#D97706', '#DC2626', '#2563EB', '#7C3AED', '#0E6E6B', '#B45309', '#0891B2', '#BE185D', '#65A30D', '#9333EA'];
+
+function renderCharts(filtered) {
+  const tabColor = CATEGORY_COLORS[currentCategory] || CATEGORY_COLOR_FALLBACK;
+
+  const schemeCounts = {};
+  filtered.forEach(d => { schemeCounts[d.scheme] = (schemeCounts[d.scheme] || 0) + 1; });
+
+  const ctx1 = document.getElementById('chart-scheme');
+  if (chartSchemeObj) { chartSchemeObj.destroy(); chartSchemeObj = null; }
+  
+  if (ctx1) {
+    const schemeLabels = Object.keys(schemeCounts);
+    const schemeColors = schemeLabels.map((_, i) => SCHEME_PALETTE[i % SCHEME_PALETTE.length]);
+
+    chartSchemeObj = new Chart(ctx1, {
+      type: 'bar',
+      data: {
+        labels: schemeLabels,
+        datasets: [{ label: 'Sites', data: Object.values(schemeCounts), backgroundColor: schemeColors }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: { top: 26 } },
+        scales: {
+          y: { beginAtZero: true, grace: '12%' }
+        },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'bottom',
+            labels: {
+              boxWidth: 12,
+              font: { size: 10 },
+              generateLabels: (chart) => schemeLabels.map((label, i) => ({
+                text: `${label} (${Object.values(schemeCounts)[i]})`,
+                fillStyle: schemeColors[i],
+                strokeStyle: schemeColors[i]
+              }))
+            }
+          },
+          datalabels: {
+            anchor: 'end',
+            align: 'top',
+            color: '#122036',
+            font: { weight: 'bold', size: 11 },
+            formatter: (value) => value
+          }
+        }
+      }
+    });
+  }
+
+  const catCounts = {};
+  filtered.forEach(d => { catCounts[d.category] = (catCounts[d.category] || 0) + 1; });
+
+  const ctx2 = document.getElementById('chart-status');
+  if (chartStatusObj) { chartStatusObj.destroy(); chartStatusObj = null; }
+
+  if (ctx2) {
+    const catLabels = Object.keys(catCounts);
+    const catValues = Object.values(catCounts);
+    const segmentColors = catLabels.length === 1
+      ? [tabColor]
+      : catLabels.map(label => CATEGORY_COLORS[label] || CATEGORY_COLOR_FALLBACK);
+
+    chartStatusObj = new Chart(ctx2, {
+      type: 'doughnut',
+      data: {
+        labels: catLabels,
+        datasets: [{
+          data: catValues,
+          backgroundColor: segmentColors
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: 'bottom',
+            labels: {
+              generateLabels: (chart) => catLabels.map((label, i) => ({
+                text: `${label} (${catValues[i]})`,
+                fillStyle: segmentColors[i],
+                strokeStyle: segmentColors[i]
+              }))
+            }
+          },
+          datalabels: {
+            color: '#fff',
+            font: { weight: 'bold', size: 11 },
+            formatter: (value) => value
+          }
+        }
+      }
+    });
+  }
+}
+
+function renderTable(filtered) {
+  const totalPages = Math.ceil(filtered.length / pageSize) || 1;
+  if (currentPage > totalPages) currentPage = totalPages;
+
+  const start = (currentPage - 1) * pageSize;
+  const pageItems = filtered.slice(start, start + pageSize);
+
+  document.getElementById('tbody').innerHTML = pageItems.map((d, index) => `
+    <tr class="row-${d.category.replace(/\s+/g,'')}">
+      <td><b>${start + index + 1}</b></td>
+      <td>${d.scheme}</td>
+      <td>${d.district}</td>
+      <td>${d.block}</td>
+      <td><b>${d.village}</b></td>
+      <td><span style="font-family:'IBM Plex Mono', monospace; font-size:11px;">${d.lgdCode}</span></td>
+      <td><span class="pill pill-${d.category.replace(/\s+/g,'')}">${d.category}</span></td>
+      <td>${d.remark}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('pager-info').innerText = `Page ${currentPage} of ${totalPages} (Total: ${filtered.length} sites)`;
+  document.getElementById('prev-btn').disabled = currentPage <= 1;
+  document.getElementById('next-btn').disabled = currentPage >= totalPages;
+}
+
+function changePage(delta) {
+  currentPage += delta;
+  renderTable(currentTabFilteredData);
+}
+
+// Top header button - Cards + Charts only, no site list table
+function exportCardsChartsPDF() {
+  if (!currentTabFilteredData.length) {
+    alert("No data available to export.");
+    return;
+  }
+
+  const fScheme = document.getElementById('f-scheme').value;
+  const fDistrict = document.getElementById('f-district').value;
+  const fBlock = document.getElementById('f-block').value;
+  const fSearch = document.getElementById('f-search').value.trim();
+
+  const appliedFilters = [];
+  if (fScheme && fScheme !== 'All Schemes') appliedFilters.push(`Scheme: ${fScheme}`);
+  if (fDistrict && fDistrict !== 'All Districts') appliedFilters.push(`District: ${fDistrict}`);
+  if (fBlock && fBlock !== 'All Blocks') appliedFilters.push(`Block: ${fBlock}`);
+  if (fSearch) appliedFilters.push(`Search: "${fSearch}"`);
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  addWatermarkToPage(doc);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor(18, 32, 54);
+  doc.text("Mobile Tower Roll-Out Progress Dashboard", 40, 40);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`Scope: ${currentScope} Sites  |  List: ${currentCategory}  |  Total Count: ${currentTabFilteredData.length}`, 40, 56);
+  doc.text(`Report Date: ${getFormattedTodayDate()}`, 760, 40, { align: 'right' });
+
+  let startY = 70;
+
+  if (appliedFilters.length) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(8.5);
+    doc.setTextColor(10, 79, 77);
+    doc.text(`Filters Applied - ${appliedFilters.join('  |  ')}`, 40, 68);
+    startY = 82;
+  }
+
+  // KPI cards (mirrors the on-screen summary cards)
+  startY = drawKPICardsPDF(doc, startY);
+
+  const chart1Img = chartSchemeObj ? chartSchemeObj.toBase64Image() : null;
+  const chart2Img = chartStatusObj ? chartStatusObj.toBase64Image() : null;
+
+  if (chart1Img && chart2Img) {
+    doc.addImage(chart1Img, 'PNG', 40, startY, 360, 130);
+    doc.addImage(chart2Img, 'PNG', 420, startY, 360, 130);
+  }
+
+  const catSanitized = currentCategory.replace(/[^a-zA-Z0-9]/g, '_');
+  doc.save(`Tower_Summary_${currentScope}Sites_${catSanitized}.pdf`);
+}
+
+function exportFullPDF() {
+  if (!currentTabFilteredData.length) {
+    alert("No data available to export.");
+    return;
+  }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  addWatermarkToPage(doc);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor(18, 32, 54);
+  doc.text("Mobile Tower Roll-Out Progress Dashboard", 40, 40);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`Scope: ${currentScope} Sites  |  Selected List: ${currentCategory}  |  Total Count: ${currentTabFilteredData.length}`, 40, 56);
+  doc.text(`Report Date: ${getFormattedTodayDate()}`, 760, 40, { align: 'right' });
+
+  let startY = 70;
+
+  // KPI cards (mirrors the on-screen summary cards)
+  startY = drawKPICardsPDF(doc, startY);
+
+  const chart1Img = chartSchemeObj ? chartSchemeObj.toBase64Image() : null;
+  const chart2Img = chartStatusObj ? chartStatusObj.toBase64Image() : null;
+
+  if (chart1Img && chart2Img) {
+    doc.addImage(chart1Img, 'PNG', 40, startY, 360, 130);
+    doc.addImage(chart2Img, 'PNG', 420, startY, 360, 130);
+    startY += 140;
+  }
+
+  const tableColumns = [
+    { header: '#', dataKey: 'index' },
+    { header: 'SCHEME', dataKey: 'scheme' },
+    { header: 'DISTRICT', dataKey: 'district' },
+    { header: 'BLOCK', dataKey: 'block' },
+    { header: 'VILLAGE', dataKey: 'village' },
+    { header: 'VILLAGE LGD CODE', dataKey: 'lgdCode' },
+    { header: 'STATUS', dataKey: 'category' },
+    { header: 'REMARK', dataKey: 'remark' }
+  ];
+
+  const tableRows = currentTabFilteredData.map((d, index) => ({
+    index: index + 1,
+    scheme: d.scheme || '',
+    district: d.district || '',
+    block: d.block || '',
+    village: d.village || '',
+    lgdCode: d.lgdCode || '',
+    category: d.category || '',
+    remark: d.remark || ''
+  }));
+
+  doc.autoTable({
+    columns: tableColumns,
+    body: tableRows,
+    startY: startY,
+    margin: { top: 40, bottom: 30, left: 40, right: 40 },
+    styles: {
+      fontSize: 8,
+      cellPadding: 4,
+      font: "helvetica",
+      textColor: [18, 32, 54],
+      lineColor: [220, 223, 217],
+      lineWidth: 0.5
+    },
+    headStyles: {
+      fillColor: [10, 79, 77],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8.5,
+      halign: 'left'
+    },
+    alternateRowStyles: {
+      fillColor: [248, 249, 246]
+    },
+    didParseCell: function(data) {
+      if (data.section === 'body') {
+        const cat = data.row.raw.category;
+        if (cat === 'Tower Commissioned') {
+          data.cell.styles.fillColor = [244, 250, 246];
+        } else if (cat === 'WIP') {
+          data.cell.styles.fillColor = [255, 253, 245];
+        } else if (cat === 'YTS' || cat === 'Land Allocation Pending') {
+          data.cell.styles.fillColor = [255, 248, 247];
+        }
+      }
+    },
+    willDrawPage: function() {
+      addWatermarkToPage(doc);
+    },
+    didDrawPage: function(data) {
+      const pageCount = doc.internal.getNumberOfPages();
+      doc.setFontSize(8);
+      doc.setTextColor(120);
+      doc.text(
+        `Page ${data.pageNumber} of ${pageCount}`,
+        doc.internal.pageSize.width - 40,
+        doc.internal.pageSize.height - 15,
+        { align: 'right' }
+      );
+    },
+    showHead: 'everyPage'
+  });
+
+  const catSanitized = currentCategory.replace(/[^a-zA-Z0-9]/g, '_');
+  doc.save(`Tower_Report_${currentScope}Sites_${catSanitized}.pdf`);
+}
+</script>
+
+</div><!-- /#dashboard-content -->
+
+<script>
+(function(){
+  const VALID_USER = "Admin";
+  const VALID_PASS = "Admin@123";
+  const form = document.getElementById('login-form');
+  const gate = document.getElementById('login-gate');
+  const content = document.getElementById('dashboard-content');
+  const errorMsg = document.getElementById('login-error');
+
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    const user = document.getElementById('login-user').value.trim();
+    const pass = document.getElementById('login-pass').value;
+    if(user === VALID_USER && pass === VALID_PASS){
+      gate.style.display = 'none';
+      content.style.display = 'block';
+      sessionStorage.setItem('tower_dash_auth', '1');
+    } else {
+      errorMsg.style.display = 'block';
+    }
+  });
+
+  // Keep user signed in for the browser tab/session only
+  if(sessionStorage.getItem('tower_dash_auth') === '1'){
+    gate.style.display = 'none';
+    content.style.display = 'block';
+  }
+})();
+</script>
+</body>
+</html>
