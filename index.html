@@ -226,8 +226,8 @@
 <div id="login-gate">
   <div class="login-card">
     <div class="login-logo-wrap">
-  <div class="login-dept">Department of Electronics &amp; Information Technology</div>
-</div>
+      <div class="login-dept">Department of Electronics &amp; Information Technology</div>
+    </div>
     <p class="eyebrow">DBN-Funded &nbsp;·&nbsp; Chhattisgarh</p>
     <h1>Tower Roll-Out Dashboard<small>Sign in to continue</small></h1>
     <form id="login-form" autocomplete="off">
@@ -246,11 +246,9 @@
 </div>
 
 <div id="dashboard-content">
-
 <div class="wrap" id="report-content">
   <header class="top">
     <div class="header-title-row">
-  
       <div>
         <p class="eyebrow">DBN-Funded &nbsp;·&nbsp; Chhattisgarh</p>
         <h1>Mobile Tower Roll-Out Progress Dashboard
@@ -408,42 +406,10 @@ function getFormattedTodayDate() {
   return `${day} ${month} ${year}`;
 }
 
-// Official Chhattisgarh Shasan emblem (Wikimedia Commons, public domain government insignia)
-const LOGO_URL = 'https://commons.wikimedia.org/wiki/Special:FilePath/Coat_of_arms_of_Chhattisgarh.svg?width=400';
+// Chhattisgarh Shasan emblem removed from dashboard and PDF.
 let logoDataUrl = null;
-
-function preloadLogoForPDF() {
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = function () {
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth || 400;
-      canvas.height = img.naturalHeight || 400;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      logoDataUrl = canvas.toDataURL('image/png');
-    } catch (e) {
-      logoDataUrl = null; // canvas got tainted / blocked - PDF export will just skip the watermark
-    }
-  };
-  img.onerror = function () { logoDataUrl = null; };
-  img.src = LOGO_URL;
-}
-
-// Draws the emblem as a faint centered watermark on whichever PDF page is currently active
-function addWatermarkToPage(doc) {
-  if (!logoDataUrl) return;
-  const pageWidth = doc.internal.pageSize.width;
-  const pageHeight = doc.internal.pageSize.height;
-  const size = Math.min(pageWidth, pageHeight) * 0.55;
-  const x = (pageWidth - size) / 2;
-  const y = (pageHeight - size) / 2;
-
-  doc.setGState(new doc.GState({ opacity: 0.07 }));
-  doc.addImage(logoDataUrl, 'PNG', x, y, size, size);
-  doc.setGState(new doc.GState({ opacity: 1 }));
-}
+function preloadLogoForPDF() { logoDataUrl = null; }
+function addWatermarkToPage(doc) { /* no watermark */ }
 
 window.addEventListener('DOMContentLoaded', () => {
   const dateEl = document.getElementById('report-date-display');
@@ -947,6 +913,111 @@ function changePage(delta) {
 }
 
 // Top header button - Cards + Charts only, no site list table
+function buildDistrictWiseSummaryRows(data) {
+  const districtMap = {};
+  data.forEach(d => {
+    const dist = d.district || 'Unknown';
+    if (!districtMap[dist]) districtMap[dist] = [];
+    districtMap[dist].push(d);
+  });
+
+  const districts = Object.keys(districtMap).sort((a, b) => a.localeCompare(b));
+
+  return districts.map(dist => {
+    const rows = districtMap[dist];
+    const total = rows.length;
+    const commissioned = rows.filter(d => d.category === 'Tower Commissioned').length;
+    const landPending = rows.filter(d => d.category === 'Land Allocation Pending').length;
+    const wip = rows.filter(d => d.category === 'WIP').length;
+    const yts = rows.filter(d => d.category === 'YTS').length;
+
+    if (currentScope === '1757') {
+      const dbnPending = rows.filter(d => d.category === 'DBN Approval Pending').length;
+      const landAllocated = commissioned + wip + yts + dbnPending;
+      return { district: dist, total, landAllocated, commissioned, landPending, dbnPending, wip, yts };
+    }
+
+    const landAllocated = commissioned + wip + yts;
+    return { district: dist, total, landAllocated, wip, yts, landPending };
+  });
+}
+
+function drawDistrictWiseSummaryPDF(doc, dropdownFiltered, startY) {
+  const districtRows = buildDistrictWiseSummaryRows(dropdownFiltered);
+  if (!districtRows.length) return;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(18, 32, 54);
+  doc.text("District-wise Summary", 40, startY);
+
+  let columns;
+  if (currentScope === '1757') {
+    columns = [
+      { header: 'S.No', dataKey: 'sno' },
+      { header: 'District', dataKey: 'district' },
+      { header: 'Total Planned', dataKey: 'total' },
+      { header: 'Land Allocated', dataKey: 'landAllocated' },
+      { header: 'Tower Commissioned', dataKey: 'commissioned' },
+      { header: 'Land Alloc. Pending', dataKey: 'landPending' },
+      { header: 'DBN Approval Pending', dataKey: 'dbnPending' },
+      { header: 'WIP', dataKey: 'wip' },
+      { header: 'YTS', dataKey: 'yts' }
+    ];
+  } else {
+    columns = [
+      { header: 'S.No', dataKey: 'sno' },
+      { header: 'District', dataKey: 'district' },
+      { header: 'Total Planned', dataKey: 'total' },
+      { header: 'Total Land Allocated', dataKey: 'landAllocated' },
+      { header: 'WIP', dataKey: 'wip' },
+      { header: 'YTS', dataKey: 'yts' },
+      { header: 'Land Alloc. Pending', dataKey: 'landPending' }
+    ];
+  }
+
+  const numberedRows = districtRows.map((row, i) => ({ sno: i + 1, ...row }));
+
+  const grandTotal = { sno: '', district: 'TOTAL' };
+  columns.forEach(c => {
+    if (c.dataKey === 'district' || c.dataKey === 'sno') return;
+    grandTotal[c.dataKey] = districtRows.reduce((sum, r) => sum + (r[c.dataKey] || 0), 0);
+  });
+
+  doc.autoTable({
+    columns,
+    body: [...numberedRows, grandTotal],
+    startY: startY + 8,
+    margin: { top: 40, bottom: 30, left: 40, right: 40 },
+    styles: {
+      fontSize: 8,
+      cellPadding: 4,
+      font: "helvetica",
+      textColor: [18, 32, 54],
+      lineColor: [220, 223, 217],
+      lineWidth: 0.5
+    },
+    headStyles: {
+      fillColor: [10, 79, 77],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8.5,
+      halign: 'left'
+    },
+    alternateRowStyles: { fillColor: [248, 249, 246] },
+    didParseCell: function(data) {
+      if (data.row.raw.district === 'TOTAL') {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fillColor = [232, 240, 237];
+      }
+    },
+    willDrawPage: function() {
+      addWatermarkToPage(doc);
+    },
+    showHead: 'everyPage'
+  });
+}
+
 function exportCardsChartsPDF() {
   if (!currentTabFilteredData.length) {
     alert("No data available to export.");
@@ -956,13 +1027,22 @@ function exportCardsChartsPDF() {
   const fScheme = document.getElementById('f-scheme').value;
   const fDistrict = document.getElementById('f-district').value;
   const fBlock = document.getElementById('f-block').value;
-  const fSearch = document.getElementById('f-search').value.trim();
+  const fSearch = document.getElementById('f-search').value.toLowerCase().trim();
 
   const appliedFilters = [];
   if (fScheme && fScheme !== 'All Schemes') appliedFilters.push(`Scheme: ${fScheme}`);
   if (fDistrict && fDistrict !== 'All Districts') appliedFilters.push(`District: ${fDistrict}`);
   if (fBlock && fBlock !== 'All Blocks') appliedFilters.push(`Block: ${fBlock}`);
   if (fSearch) appliedFilters.push(`Search: "${fSearch}"`);
+
+  const scopeData = getActiveScopeData();
+  const dropdownFiltered = scopeData.filter(d => {
+    if (fScheme !== 'All Schemes' && d.scheme !== fScheme) return false;
+    if (fDistrict !== 'All Districts' && d.district !== fDistrict) return false;
+    if (fBlock !== 'All Blocks' && d.block !== fBlock) return false;
+    if (fSearch && !d.village.toLowerCase().includes(fSearch) && !d.block.toLowerCase().includes(fSearch) && !d.lgdCode.toLowerCase().includes(fSearch)) return false;
+    return true;
+  });
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
@@ -998,7 +1078,10 @@ function exportCardsChartsPDF() {
   if (chart1Img && chart2Img) {
     doc.addImage(chart1Img, 'PNG', 40, startY, 360, 130);
     doc.addImage(chart2Img, 'PNG', 420, startY, 360, 130);
+    startY += 130 + 24;
   }
+
+  drawDistrictWiseSummaryPDF(doc, dropdownFiltered, startY);
 
   const catSanitized = currentCategory.replace(/[^a-zA-Z0-9]/g, '_');
   doc.save(`Tower_Summary_${currentScope}Sites_${catSanitized}.pdf`);
