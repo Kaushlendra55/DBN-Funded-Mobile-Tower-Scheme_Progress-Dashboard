@@ -944,181 +944,12 @@ function buildDistrictWiseSummaryRows(data) {
 
 function drawDistrictWiseSummaryPDF(doc, dropdownFiltered, startY) {
   const districtRows = buildDistrictWiseSummaryRows(dropdownFiltered);
-  if (!districtRows.length) return startY;
-
-  const selectedScheme = document.getElementById('f-scheme')?.value || 'All Schemes';
-  const selectedDistrict = document.getElementById('f-district')?.value || 'All Districts';
-  const selectedBlock = document.getElementById('f-block')?.value || 'All Blocks';
-
-  // Start district-wise section on a fresh page so it can never be hidden
-  // below the charts/KPI cards.
-  doc.addPage();
-  addWatermarkToPage(doc);
-
-  const pageWidth = doc.internal.pageSize.width;
-  const pageHeight = doc.internal.pageSize.height;
-  const margin = 28;
-  const contentWidth = pageWidth - margin * 2;
+  if (!districtRows.length) return;
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(15);
+  doc.setFontSize(11);
   doc.setTextColor(18, 32, 54);
-  doc.text("District-wise Summary", margin, 34);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(70, 80, 95);
-  doc.text(
-    `Scheme: ${selectedScheme}  |  District: ${selectedDistrict}  |  Block: ${selectedBlock}`,
-    margin, 49
-  );
-
-  // Small overall total line for the selected scheme/filter.
-  const selectedTotal = dropdownFiltered.length;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(10, 79, 77);
-  doc.text(`Total sites covered in this district-wise summary: ${selectedTotal}`, margin, 64);
-
-  // District cards: 3 cards per row. Each card contains the same calculations
-  // as the dashboard KPI cards, but separately for each district.
-  const cols = 3;
-  const gap = 10;
-  const cardW = (contentWidth - gap * (cols - 1)) / cols;
-  const cardH = currentScope === '1757' ? 132 : 110;
-  const titleH = 22;
-  const valueFont = 12;
-  const labelFont = 6.2;
-
-  function drawMetric(doc, label, value, x, y, width) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(labelFont);
-    doc.setTextColor(85, 95, 110);
-    doc.text(label.toUpperCase(), x, y);
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(valueFont);
-    doc.setTextColor(18, 32, 54);
-    doc.text(String(value), x + width, y, { align: 'right' });
-  }
-
-  // Paged card rendering
-  let cardIndex = 0;
-  let firstPage = true;
-  while (cardIndex < districtRows.length) {
-    if (!firstPage) {
-      doc.addPage();
-      addWatermarkToPage(doc);
-    }
-    firstPage = false;
-
-    const headerY = 34;
-    if (cardIndex > 0) {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(18, 32, 54);
-      doc.text("District-wise Summary (continued)", margin, headerY);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(70, 80, 95);
-      doc.text(`Scheme: ${selectedScheme}`, margin, headerY + 14);
-    }
-
-    const firstCardY = cardIndex === 0 ? 78 : 58;
-    const availableHeight = pageHeight - firstCardY - 35;
-    const rowsPerPage = Math.max(1, Math.floor((availableHeight + gap) / (cardH + gap)));
-    const cardsThisPage = Math.min(districtRows.length - cardIndex, rowsPerPage * cols);
-
-    for (let local = 0; local < cardsThisPage; local++) {
-      const row = districtRows[cardIndex + local];
-      const col = local % cols;
-      const rowNo = Math.floor(local / cols);
-      const x = margin + col * (cardW + gap);
-      const y = firstCardY + rowNo * (cardH + gap);
-
-      // Card
-      doc.setFillColor(255, 255, 255);
-      doc.setDrawColor(220, 223, 217);
-      doc.setLineWidth(0.7);
-      doc.roundedRect(x, y, cardW, cardH, 4, 4, 'FD');
-
-      // District title bar
-      doc.setFillColor(10, 79, 77);
-      doc.roundedRect(x, y, cardW, titleH, 4, 4, 'F');
-      doc.rect(x, y + titleH - 4, cardW, 4, 'F');
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.5);
-      doc.setTextColor(255, 255, 255);
-      doc.text(String(row.district || 'Unknown District'), x + 8, y + 14, {
-        maxWidth: cardW - 16
-      });
-
-      let metricY = y + titleH + 13;
-      const metricX = x + 8;
-      const metricW = cardW - 16;
-      const lineGap = currentScope === '1757' ? 13 : 15;
-
-      drawMetric(doc, 'Total Planned', row.total, metricX, metricY, metricW);
-      metricY += lineGap;
-      drawMetric(doc, currentScope === '1757' ? 'Land Allocated' : 'Total Land Allocated',
-        row.landAllocated, metricX, metricY, metricW);
-      metricY += lineGap;
-      drawMetric(doc, 'Tower Commissioned', row.commissioned, metricX, metricY, metricW);
-
-      if (currentScope === '1757') {
-        metricY += lineGap;
-        drawMetric(doc, 'Land Allocation Pending', row.landPending, metricX, metricY, metricW);
-        metricY += lineGap;
-        drawMetric(doc, 'DBN Approval Pending', row.dbnPending, metricX, metricY, metricW);
-        metricY += lineGap;
-        drawMetric(doc, 'WIP', row.wip, metricX, metricY, metricW);
-        metricY += lineGap;
-        drawMetric(doc, 'YTS', row.yts, metricX, metricY, metricW);
-      } else {
-        metricY += lineGap;
-        drawMetric(doc, 'WIP', row.wip, metricX, metricY, metricW);
-        metricY += lineGap;
-        drawMetric(doc, 'YTS', row.yts, metricX, metricY, metricW);
-        metricY += lineGap;
-        drawMetric(doc, 'Land Allocation Pending', row.landPending, metricX, metricY, metricW);
-      }
-
-      // Completion percentage for the district
-      const pct = row.total ? Math.round((row.commissioned / row.total) * 100) : 0;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(6.5);
-      doc.setTextColor(46, 125, 79);
-      doc.text(`Commissioned: ${pct}%`, x + cardW - 8, y + cardH - 7, { align: 'right' });
-
-      cardIndex++;
-    }
-
-    // Footer
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    doc.setTextColor(120, 120, 120);
-    doc.text(
-      `District-wise summary | Page ${doc.internal.getNumberOfPages()}`,
-      margin,
-      pageHeight - 15
-    );
-  }
-
-  // Add a final consolidated district table after the cards.
-  doc.addPage();
-  addWatermarkToPage(doc);
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.setTextColor(18, 32, 54);
-  doc.text("District-wise Summary — Consolidated Table", margin, 34);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(70, 80, 95);
-  doc.text(`Scheme: ${selectedScheme} | Total sites: ${selectedTotal}`, margin, 49);
+  doc.text("District-wise Summary", 40, startY);
 
   let columns;
   if (currentScope === '1757') {
@@ -1139,7 +970,6 @@ function drawDistrictWiseSummaryPDF(doc, dropdownFiltered, startY) {
       { header: 'District', dataKey: 'district' },
       { header: 'Total Planned', dataKey: 'total' },
       { header: 'Total Land Allocated', dataKey: 'landAllocated' },
-      { header: 'Tower Commissioned', dataKey: 'commissioned' },
       { header: 'WIP', dataKey: 'wip' },
       { header: 'YTS', dataKey: 'yts' },
       { header: 'Land Alloc. Pending', dataKey: 'landPending' }
@@ -1147,19 +977,20 @@ function drawDistrictWiseSummaryPDF(doc, dropdownFiltered, startY) {
   }
 
   const numberedRows = districtRows.map((row, i) => ({ sno: i + 1, ...row }));
+
   const grandTotal = { sno: '', district: 'TOTAL' };
   columns.forEach(c => {
     if (c.dataKey === 'district' || c.dataKey === 'sno') return;
-    grandTotal[c.dataKey] = districtRows.reduce((sum, r) => sum + (Number(r[c.dataKey]) || 0), 0);
+    grandTotal[c.dataKey] = districtRows.reduce((sum, r) => sum + (r[c.dataKey] || 0), 0);
   });
 
   doc.autoTable({
     columns,
     body: [...numberedRows, grandTotal],
-    startY: 60,
-    margin: { top: 35, bottom: 30, left: margin, right: margin },
+    startY: startY + 8,
+    margin: { top: 40, bottom: 30, left: 40, right: 40 },
     styles: {
-      fontSize: 7.5,
+      fontSize: 8,
       cellPadding: 4,
       font: "helvetica",
       textColor: [18, 32, 54],
@@ -1170,12 +1001,12 @@ function drawDistrictWiseSummaryPDF(doc, dropdownFiltered, startY) {
       fillColor: [10, 79, 77],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 7.5,
+      fontSize: 8.5,
       halign: 'left'
     },
     alternateRowStyles: { fillColor: [248, 249, 246] },
     didParseCell: function(data) {
-      if (data.row.raw && data.row.raw.district === 'TOTAL') {
+      if (data.row.raw.district === 'TOTAL') {
         data.cell.styles.fontStyle = 'bold';
         data.cell.styles.fillColor = [232, 240, 237];
       }
@@ -1183,21 +1014,10 @@ function drawDistrictWiseSummaryPDF(doc, dropdownFiltered, startY) {
     willDrawPage: function() {
       addWatermarkToPage(doc);
     },
-    didDrawPage: function(data) {
-      doc.setFontSize(7);
-      doc.setTextColor(120);
-      doc.text(
-        `District-wise Summary | Page ${data.pageNumber}`,
-        pageWidth - margin,
-        pageHeight - 15,
-        { align: 'right' }
-      );
-    },
     showHead: 'everyPage'
   });
-
-  return doc.lastAutoTable ? doc.lastAutoTable.finalY : startY;
 }
+
 
 function exportCardsChartsPDF() {
   if (!currentTabFilteredData.length) {
