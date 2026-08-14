@@ -299,8 +299,8 @@
     </div>
     <div class="field"><label for="f-scheme">Scheme</label><select id="f-scheme" onchange="applyFilters()"></select></div>
     <div class="field"><label for="f-district">District</label><select id="f-district" onchange="onDistrictChange()"></select></div>
-    <div class="field"><label for="f-block">Block</label><select id="f-block" onchange="applyFilters()"></select></div>
-    <div class="field" style="flex:1; min-width:180px;"><label for="f-search">Search Village / Block / LGD Code</label><input id="f-search" type="text" placeholder="Type to search..." oninput="applyFilters()"></div>
+    <div class="field"><label for="f-block">Block</label><select id="f-block" onchange="onBlockChange()"></select></div>
+    <div class="field" style="flex:1; min-width:180px;"><label for="f-search">Search Village / Block / LGD Code</label><input id="f-search" type="text" placeholder="Type to search..." oninput="onSearchInput()"></div>
     <button class="reset-btn" onclick="resetFilters()">Reset Filters</button>
     <div class="filter-count" id="filter-count"></div>
   </div>
@@ -610,6 +610,62 @@ function updateBlockOptions() {
 
 function onDistrictChange() {
   updateBlockOptions();
+  applyFilters();
+}
+
+// When a Block is chosen directly (without picking a District first), auto-fill the
+// District dropdown with the district that block belongs to.
+function onBlockChange() {
+  const scopeData = getActiveScopeData();
+  const blockSelect = document.getElementById('f-block');
+  const districtSelect = document.getElementById('f-district');
+  const selectedBlock = blockSelect.value;
+
+  if (selectedBlock && selectedBlock !== 'All Blocks') {
+    const match = scopeData.find(d => d.block === selectedBlock);
+    if (match && match.district && districtSelect.value !== match.district) {
+      districtSelect.value = match.district;
+      updateBlockOptions();
+      blockSelect.value = selectedBlock;
+    }
+  }
+  applyFilters();
+}
+
+// When typing in the Village/Block/LGD search box, auto-fill District (and Block, if it
+// narrows to just one) based on what the search text uniquely matches.
+function onSearchInput() {
+  const searchVal = document.getElementById('f-search').value.toLowerCase().trim();
+
+  if (searchVal) {
+    const scopeData = getActiveScopeData();
+    const fScheme = document.getElementById('f-scheme').value;
+
+    const matches = scopeData.filter(d => {
+      if (fScheme !== 'All Schemes' && d.scheme !== fScheme) return false;
+      return d.village.toLowerCase().includes(searchVal) || d.block.toLowerCase().includes(searchVal) || d.lgdCode.toLowerCase().includes(searchVal);
+    });
+
+    if (matches.length) {
+      const uniqueDistricts = [...new Set(matches.map(d => d.district).filter(Boolean))];
+      if (uniqueDistricts.length === 1) {
+        const districtSelect = document.getElementById('f-district');
+        if (districtSelect.value !== uniqueDistricts[0]) {
+          districtSelect.value = uniqueDistricts[0];
+          updateBlockOptions();
+        }
+        const blockMatches = matches.filter(d => d.district === uniqueDistricts[0]);
+        const uniqueBlocks = [...new Set(blockMatches.map(d => d.block).filter(Boolean))];
+        if (uniqueBlocks.length === 1) {
+          const blockSelect = document.getElementById('f-block');
+          if ([...blockSelect.options].some(o => o.value === uniqueBlocks[0])) {
+            blockSelect.value = uniqueBlocks[0];
+          }
+        }
+      }
+    }
+  }
+
   applyFilters();
 }
 
