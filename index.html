@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
 <!-- jsPDF & AutoTable -->
@@ -345,6 +346,7 @@
     <div class="table-header-bar">
       <div class="tabs" id="status-tabs"></div>
       <button class="export-pdf-btn" onclick="exportFullPDF()" style="font-size:11px; padding:6px 12px;">📄 Download Complete List PDF</button>
+      <button class="export-pdf-btn" onclick="exportExcel()" style="font-size:11px; padding:6px 12px; background:#1D6F3E;">📊 Download Excel</button>
     </div>
     <div class="table-scroll">
       <table>
@@ -483,7 +485,7 @@ async function fetchLastBackendUpdate() {
     if (latest) {
       const dateStr = latest.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
       const timeStr = latest.toLocaleTimeString();
-      el.innerText = `| Backend Last Updated: ${dateStr}, ${timeStr}`;
+      el.innerText = `| Last Updated On: ${dateStr}, ${timeStr}`;
     } else {
       el.innerText = '';
     }
@@ -1238,6 +1240,43 @@ function exportCardsChartsPDF() {
 
   const catSanitized = currentCategory.replace(/[^a-zA-Z0-9]/g, '_');
   doc.save(`Tower_Summary_${currentScope}Sites_${catSanitized}.pdf`);
+}
+
+function exportExcel() {
+  if (!currentTabFilteredData.length) {
+    alert("No data available to export.");
+    return;
+  }
+
+  const rows = currentTabFilteredData.map((d, index) => ({
+    '#': index + 1,
+    'Scheme': d.scheme || '',
+    'District': d.district || '',
+    'Block': d.block || '',
+    'Village': d.village || '',
+    'Village LGD Code': d.lgdCode || '',
+    'Status': d.category || '',
+    'Remark': d.remark || ''
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  worksheet['!cols'] = [
+    { wch: 6 },  // #
+    { wch: 18 }, // Scheme
+    { wch: 16 }, // District
+    { wch: 16 }, // Block
+    { wch: 20 }, // Village
+    { wch: 18 }, // Village LGD Code
+    { wch: 20 }, // Status
+    { wch: 30 }  // Remark
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  const sheetName = currentCategory.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 28) || 'Sites';
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+  const catSanitized = currentCategory.replace(/[^a-zA-Z0-9]/g, '_');
+  XLSX.writeFile(workbook, `Tower_Report_${currentScope}Sites_${catSanitized}.xlsx`);
 }
 
 function exportFullPDF() {
