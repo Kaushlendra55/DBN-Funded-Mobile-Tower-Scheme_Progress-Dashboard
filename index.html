@@ -438,7 +438,7 @@ async function fetchGoogleSheetData() {
     SITES_577 = processSheet577Rows(rows577);
     sheetsLoaded = { s1757: true, s577: true };
 
-    statusEl.innerText = `Last Synced: ${new Date().toLocaleTimeString()} | 1757: ${SITES_1757.length} | 577: ${SITES_577.length}`;
+    statusEl.innerText = `Last Synced: ${new Date().toLocaleTimeString()}`;
     initFilterOptions();
     applyFilters();
   } catch (error) {
