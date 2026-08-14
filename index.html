@@ -87,9 +87,28 @@
   .kpi.k-teal2::before{background:var(--teal2);}
   .kpi.k-orange::before{background:var(--orange);}
   .kpi.k-rose::before{background:var(--rose);}
-  .kpi .lbl{font-family:'IBM Plex Mono', monospace; font-size:10px; text-transform:uppercase; color:var(--ink-soft); font-weight:600;}
+  .kpi .lbl{font-family:'IBM Plex Mono', monospace; font-size:10px; text-transform:uppercase; color:var(--ink-soft); font-weight:600; display:flex; align-items:center; gap:5px;}
   .kpi .val{font-family:'IBM Plex Sans Condensed', sans-serif; font-size:28px; font-weight:700; margin-top:4px; line-height:1;}
   .kpi .sub{font-size:11px; color:var(--ink-soft); margin-top:6px;}
+
+  /* Sync button spinner */
+  #sync-icon{display:inline-block;}
+  #sync-icon.spin{animation:spin-rotate 0.8s linear infinite;}
+  @keyframes spin-rotate{from{transform:rotate(0deg);} to{transform:rotate(360deg);}}
+  .sync-btn.loading{opacity:0.7; cursor:not-allowed;}
+
+  /* Skeleton loaders */
+  @keyframes shimmer{0%{background-position:-400px 0;} 100%{background-position:400px 0;}}
+  .skeleton-card{
+    background:linear-gradient(90deg, #E4E7DF 25%, #F2F3EF 37%, #E4E7DF 63%);
+    background-size:400px 100%; animation:shimmer 1.4s ease-in-out infinite;
+    border-radius:8px; height:90px; border:1px solid var(--line);
+  }
+  .skeleton-bar{
+    background:linear-gradient(90deg, #E4E7DF 25%, #F2F3EF 37%, #E4E7DF 63%);
+    background-size:400px 100%; animation:shimmer 1.4s ease-in-out infinite;
+    border-radius:4px; height:14px; width:100%;
+  }
 
   .charts-row{display:grid; grid-template-columns:1.5fr 1fr; gap:16px; margin-bottom:20px;}
   .panel{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; box-shadow:var(--shadow);}
@@ -280,8 +299,9 @@
   <!-- Sync Bar -->
   <div class="sync-bar">
     <div>
-      <button class="sync-btn" onclick="fetchGoogleSheetData()">🔄 Sync Live Data</button>
+      <button class="sync-btn" onclick="fetchGoogleSheetData()"><span id="sync-icon">🔄</span> Sync Live Data</button>
       <span id="sync-status" style="margin-left:10px; font-family:'IBM Plex Mono', monospace;">Connecting to Google Sheets...</span>
+      <span id="backend-updated-status" style="margin-left:10px; font-family:'IBM Plex Mono', monospace;"></span>
     </div>
   </div>
 
@@ -434,13 +454,62 @@ window.addEventListener('DOMContentLoaded', () => {
   fetchGoogleSheetData();
 });
 
+function showKpiSkeleton(count = 6) {
+  document.getElementById('kpi-row').innerHTML =
+    Array.from({ length: count }).map(() => '<div class="skeleton-card"></div>').join('');
+}
+
+function showTableSkeleton(rows = 8) {
+  document.getElementById('tbody').innerHTML =
+    Array.from({ length: rows }).map(() =>
+      `<tr><td colspan="8" style="padding:10px 12px;"><div class="skeleton-bar"></div></td></tr>`
+    ).join('');
+}
+
+async function fetchLastBackendUpdate() {
+  const el = document.getElementById('backend-updated-status');
+  if (!el) return;
+  try {
+    const [r1, r2] = await Promise.all([
+      supabaseClient.from('sites_1757').select('updated_at').order('updated_at', { ascending: false }).limit(1),
+      supabaseClient.from('sites_577').select('updated_at').order('updated_at', { ascending: false }).limit(1)
+    ]);
+    if (r1.error || r2.error) throw (r1.error || r2.error);
+
+    const t1 = (r1.data && r1.data[0] && r1.data[0].updated_at) ? new Date(r1.data[0].updated_at) : null;
+    const t2 = (r2.data && r2.data[0] && r2.data[0].updated_at) ? new Date(r2.data[0].updated_at) : null;
+    const latest = [t1, t2].filter(Boolean).sort((a, b) => b - a)[0];
+
+    if (latest) {
+      const dateStr = latest.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      const timeStr = latest.toLocaleTimeString();
+      el.innerText = `| Backend Last Updated: ${dateStr}, ${timeStr}`;
+    } else {
+      el.innerText = '';
+    }
+  } catch (err) {
+    // Column may not exist yet (e.g. before running the "add updated_at column" SQL) - fail silently.
+    console.error('Could not fetch backend last-updated time:', err);
+    el.innerText = '';
+  }
+}
+
 async function fetchGoogleSheetData() {
   const statusEl = document.getElementById('sync-status');
+  const syncBtn = document.querySelector('.sync-btn');
+  const syncIcon = document.getElementById('sync-icon');
   statusEl.innerText = "Fetching latest live data from Supabase...";
   sheetsLoaded = { s1757: false, s577: false };
 
+  if (syncBtn) { syncBtn.classList.add('loading'); syncBtn.disabled = true; }
+  if (syncIcon) syncIcon.classList.add('spin');
+  showKpiSkeleton();
+  showTableSkeleton();
+
   if (!SUPABASE_KEY || SUPABASE_KEY === 'PASTE_YOUR_SUPABASE_PUBLISHABLE_KEY_HERE') {
     statusEl.innerText = "Supabase key not configured. Open this HTML and paste your Publishable/anon key in SUPABASE_KEY.";
+    if (syncBtn) { syncBtn.classList.remove('loading'); syncBtn.disabled = false; }
+    if (syncIcon) syncIcon.classList.remove('spin');
     return;
   }
 
@@ -455,11 +524,15 @@ async function fetchGoogleSheetData() {
     sheetsLoaded = { s1757: true, s577: true };
 
     statusEl.innerText = `Last Synced: ${new Date().toLocaleTimeString()}`;
+    fetchLastBackendUpdate();
     initFilterOptions();
     applyFilters();
   } catch (error) {
     console.error('Supabase data load error:', error);
     statusEl.innerText = `Error loading Supabase data: ${error.message || error}`;
+  } finally {
+    if (syncBtn) { syncBtn.classList.remove('loading'); syncBtn.disabled = false; }
+    if (syncIcon) syncIcon.classList.remove('spin');
   }
 }
 
@@ -634,7 +707,14 @@ function onBlockChange() {
 
 // When typing in the Village/Block/LGD search box, auto-fill District (and Block, if it
 // narrows to just one) based on what the search text uniquely matches.
+// Debounced by 300ms so filtering doesn't re-run on every single keystroke.
+let searchDebounceTimer = null;
 function onSearchInput() {
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(runSearchFilter, 300);
+}
+
+function runSearchFilter() {
   const searchVal = document.getElementById('f-search').value.toLowerCase().trim();
 
   if (searchVal) {
@@ -752,13 +832,13 @@ function renderKPIs(baseFiltered) {
     const landAllocated = baseFiltered.filter(d => d.category === 'DBN Approval Pending' || d.category === 'YTS' || d.category === 'WIP' || d.category === 'Tower Commissioned').length;
 
     cards = [
-      { label: 'Total Sites Planned',     value: total,        sub: null,                              colorKey: 'default' },
-      { label: 'Land Allocated',          value: landAllocated,sub: null,                              colorKey: 'teal2'   },
-      { label: 'Tower Commissioned',      value: commissioned, sub: `${calcPercent(commissioned)}%`,   colorKey: 'green'   },
-      { label: 'Land Allocation Pending', value: landPending,  sub: `${calcPercent(landPending)}%`,    colorKey: 'red'     },
-      { label: 'DBN Approval Pending',    value: dbnPending,   sub: `${calcPercent(dbnPending)}%`,     colorKey: 'orange'  },
-      { label: 'WIP',                     value: wip,          sub: `${calcPercent(wip)}%`,            colorKey: 'amber'   },
-      { label: 'YTS',                     value: yts,          sub: `${calcPercent(yts)}%`,            colorKey: 'rose'    }
+      { label: 'Total Sites Planned',     value: total,        sub: null,                              colorKey: 'default', info: 'Total number of tower sites planned under this scheme.' },
+      { label: 'Land Allocated',          value: landAllocated,sub: null,                              colorKey: 'teal2',   info: 'Sites where land has been allocated — includes DBN approval pending, WIP, YTS and commissioned sites.' },
+      { label: 'Tower Commissioned',      value: commissioned, sub: `${calcPercent(commissioned)}%`,   colorKey: 'green',   info: 'Sites where the tower has been fully installed and is live.' },
+      { label: 'Land Allocation Pending', value: landPending,  sub: `${calcPercent(landPending)}%`,    colorKey: 'red',     info: 'Sites where land has not yet been allocated.' },
+      { label: 'DBN Approval Pending',    value: dbnPending,   sub: `${calcPercent(dbnPending)}%`,     colorKey: 'orange',  info: 'Land allocated, but waiting for DBN (funding body) approval to begin construction.' },
+      { label: 'WIP',                     value: wip,          sub: `${calcPercent(wip)}%`,            colorKey: 'amber',   info: 'Work In Progress — tower construction has started but is not yet complete.' },
+      { label: 'YTS',                     value: yts,          sub: `${calcPercent(yts)}%`,            colorKey: 'rose',    info: 'Yet To Start — approved, but construction work has not begun yet.' }
     ];
   } else {
     const landAllocated = baseFiltered.filter(d => d.category === 'WIP' || d.category === 'YTS' || d.category === 'Tower Commissioned').length;
@@ -767,11 +847,11 @@ function renderKPIs(baseFiltered) {
     const landPending = baseFiltered.filter(d => d.category === 'Land Allocation Pending').length;
 
     cards = [
-      { label: 'Total Sites Planned',     value: total,         sub: '100%',                          colorKey: 'default' },
-      { label: 'Total Land Allocated',    value: landAllocated, sub: `${calcPercent(landAllocated)}%`, colorKey: 'teal2'   },
-      { label: 'Work in Progress (WIP)',  value: wip,           sub: `${calcPercent(wip)}%`,           colorKey: 'amber'   },
-      { label: 'Yet To Start (YTS)',      value: yts,           sub: `${calcPercent(yts)}%`,           colorKey: 'rose'    },
-      { label: 'Land Allocation Pending', value: landPending,   sub: `${calcPercent(landPending)}%`,   colorKey: 'red'     }
+      { label: 'Total Sites Planned',     value: total,         sub: '100%',                          colorKey: 'default', info: 'Total number of new sites planned under the 4G Saturation scheme.' },
+      { label: 'Total Land Allocated',    value: landAllocated, sub: `${calcPercent(landAllocated)}%`, colorKey: 'teal2',   info: 'Sites where land has been allocated — includes WIP, YTS and commissioned sites.' },
+      { label: 'Work in Progress (WIP)',  value: wip,           sub: `${calcPercent(wip)}%`,           colorKey: 'amber',   info: 'Tower construction has started but is not yet complete.' },
+      { label: 'Yet To Start (YTS)',      value: yts,           sub: `${calcPercent(yts)}%`,           colorKey: 'rose',    info: 'Approved, but construction work has not begun yet.' },
+      { label: 'Land Allocation Pending', value: landPending,   sub: `${calcPercent(landPending)}%`,   colorKey: 'red',     info: 'Sites where land has not yet been allocated.' }
     ];
   }
 
