@@ -8,12 +8,12 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
 <!-- jsPDF & AutoTable -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <style>
   :root{
@@ -56,6 +56,19 @@
   .sync-btn:hover{background:#fff;}
 
   .scope-switcher{display:flex; gap:10px; margin-bottom:20px;}
+
+  .history-panel{
+    display:none; background:var(--card); border:1px solid var(--line); border-radius:8px;
+    padding:14px 18px; margin-bottom:20px; box-shadow:var(--shadow);
+  }
+  .history-panel.open{display:block;}
+  .history-panel-row{display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap;}
+  .history-panel-row .field{margin-bottom:0;}
+  .history-panel-row input[type="date"]{
+    font-family:'IBM Plex Sans', sans-serif; font-size:13px; padding:8px 10px; border-radius:6px;
+    border:1px solid #C7CBC3; background:#fff; color:var(--ink);
+  }
+  .history-panel-note{font-family:'IBM Plex Sans', sans-serif; font-size:11.5px; color:var(--ink-soft); margin-top:10px;}
   .scope-btn{
     font-family:'IBM Plex Sans Condensed', sans-serif; font-size:16px; font-weight:700;
     padding:10px 20px; border-radius:8px; cursor:pointer; background:var(--card); border:2px solid var(--line); color:var(--ink-soft);
@@ -293,9 +306,26 @@
     </div>
     <div class="report-meta">
       <div>Report Date: <b id="report-date-display">11 Aug 2026</b></div>
-      <button class="export-pdf-btn" onclick="exportCardsChartsPDF()">📄 Download Summary PDF</button>
+      <div style="display:flex; gap:8px;">
+        <button class="export-pdf-btn" onclick="exportCardsChartsPDF()">📄 Download Summary PDF</button>
+        <button class="export-pdf-btn" id="history-toggle-btn" onclick="toggleHistoryPanel()">📅 Historical Report</button>
+      </div>
     </div>
   </header>
+
+  <!-- Historical Report Panel -->
+  <div class="history-panel" id="history-panel">
+    <div class="history-panel-row">
+      <div class="field">
+        <label for="history-date">Select Date</label>
+        <input type="date" id="history-date">
+      </div>
+      <button class="login-btn" style="width:auto; margin-top:0;" onclick="downloadHistoryExcel()">⬇ Download Excel</button>
+      <button class="login-btn secondary" style="width:auto; margin-top:0;" onclick="downloadHistoryPDF()">⬇ Download PDF</button>
+    </div>
+    <p class="history-panel-note">Report uses your currently selected Scheme / District / Block / Search / Status-list filters, and includes progress compared to today.</p>
+    <p class="login-error" id="history-error"></p>
+  </div>
 
   <!-- Sync Bar -->
   <div class="sync-bar">
@@ -346,7 +376,6 @@
     <div class="table-header-bar">
       <div class="tabs" id="status-tabs"></div>
       <button class="export-pdf-btn" onclick="exportFullPDF()" style="font-size:11px; padding:6px 12px;">📄 Download Complete List PDF</button>
-      <button class="export-pdf-btn" onclick="exportExcel()" style="font-size:11px; padding:6px 12px; background:#1D6F3E;">📊 Download Excel</button>
     </div>
     <div class="table-scroll">
       <table>
@@ -485,7 +514,7 @@ async function fetchLastBackendUpdate() {
     if (latest) {
       const dateStr = latest.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
       const timeStr = latest.toLocaleTimeString();
-      el.innerText = `| Last Updated On: ${dateStr}, ${timeStr}`;
+      el.innerText = `| Backend Last Updated: ${dateStr}, ${timeStr}`;
     } else {
       el.innerText = '';
     }
@@ -1242,43 +1271,6 @@ function exportCardsChartsPDF() {
   doc.save(`Tower_Summary_${currentScope}Sites_${catSanitized}.pdf`);
 }
 
-function exportExcel() {
-  if (!currentTabFilteredData.length) {
-    alert("No data available to export.");
-    return;
-  }
-
-  const rows = currentTabFilteredData.map((d, index) => ({
-    '#': index + 1,
-    'Scheme': d.scheme || '',
-    'District': d.district || '',
-    'Block': d.block || '',
-    'Village': d.village || '',
-    'Village LGD Code': d.lgdCode || '',
-    'Status': d.category || '',
-    'Remark': d.remark || ''
-  }));
-
-  const worksheet = XLSX.utils.json_to_sheet(rows);
-  worksheet['!cols'] = [
-    { wch: 6 },  // #
-    { wch: 18 }, // Scheme
-    { wch: 16 }, // District
-    { wch: 16 }, // Block
-    { wch: 20 }, // Village
-    { wch: 18 }, // Village LGD Code
-    { wch: 20 }, // Status
-    { wch: 30 }  // Remark
-  ];
-
-  const workbook = XLSX.utils.book_new();
-  const sheetName = currentCategory.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 28) || 'Sites';
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-
-  const catSanitized = currentCategory.replace(/[^a-zA-Z0-9]/g, '_');
-  XLSX.writeFile(workbook, `Tower_Report_${currentScope}Sites_${catSanitized}.xlsx`);
-}
-
 function exportFullPDF() {
   if (!currentTabFilteredData.length) {
     alert("No data available to export.");
@@ -1390,6 +1382,259 @@ function exportFullPDF() {
 
   const catSanitized = currentCategory.replace(/[^a-zA-Z0-9]/g, '_');
   doc.save(`Tower_Report_${currentScope}Sites_${catSanitized}.pdf`);
+}
+
+/* ============================================================
+   HISTORICAL REPORT (past-date snapshot + progress vs today)
+   Requires 'sites_1757_history' / 'sites_577_history' tables
+   (populated by a daily Supabase pg_cron snapshot job).
+============================================================ */
+
+function toggleHistoryPanel() {
+  const panel = document.getElementById('history-panel');
+  const isOpen = panel.classList.toggle('open');
+  if (isOpen) {
+    const dateInput = document.getElementById('history-date');
+    const todayStr = new Date().toISOString().slice(0, 10);
+    dateInput.max = todayStr;
+    if (!dateInput.value) dateInput.value = todayStr;
+    document.getElementById('history-error').style.display = 'none';
+  }
+}
+
+// Applies the currently selected Scheme/District/Block/Search + Status-tab filters
+// to any dataset (used for both live data and a historical snapshot).
+function applyCurrentFiltersTo(dataset) {
+  const fScheme = document.getElementById('f-scheme').value;
+  const fDistrict = document.getElementById('f-district').value;
+  const fBlock = document.getElementById('f-block').value;
+  const fSearch = document.getElementById('f-search').value.toLowerCase().trim();
+
+  const dropdownFiltered = dataset.filter(d => {
+    if (fScheme !== 'All Schemes' && d.scheme !== fScheme) return false;
+    if (fDistrict !== 'All Districts' && d.district !== fDistrict) return false;
+    if (fBlock !== 'All Blocks' && d.block !== fBlock) return false;
+    if (fSearch && !d.village.toLowerCase().includes(fSearch) && !d.block.toLowerCase().includes(fSearch) && !d.lgdCode.toLowerCase().includes(fSearch)) return false;
+    return true;
+  });
+
+  return dropdownFiltered.filter(d => {
+    if (currentCategory === 'Total Sites Planned') return true;
+    if (currentCategory === 'Land Allocated') return d.category === 'DBN Approval Pending' || d.category === 'YTS' || d.category === 'WIP' || d.category === 'Tower Commissioned';
+    if (currentCategory === 'Total Land Allocated') return d.category === 'WIP' || d.category === 'YTS' || d.category === 'Tower Commissioned';
+    return d.category === currentCategory;
+  });
+}
+
+// Fetches the raw snapshot rows for the given date from the history table
+// (paginated the same way fetchAllRows() handles the live tables).
+async function fetchHistorySnapshotRaw(dateStr, batchSize = 1000) {
+  const tableName = currentScope === '1757' ? 'sites_1757_history' : 'sites_577_history';
+  const allRows = [];
+  let from = 0;
+  while (true) {
+    const to = from + batchSize - 1;
+    const { data, error } = await supabaseClient
+      .from(tableName)
+      .select('*')
+      .eq('snapshot_date', dateStr)
+      .range(from, to);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+
+    allRows.push(...data);
+    if (data.length < batchSize) break;
+    from += batchSize;
+  }
+  return allRows;
+}
+
+function statusCounts(dataset) {
+  return {
+    total: dataset.length,
+    commissioned: dataset.filter(d => d.category === 'Tower Commissioned').length,
+    wip: dataset.filter(d => d.category === 'WIP').length,
+    yts: dataset.filter(d => d.category === 'YTS').length,
+    landPending: dataset.filter(d => d.category === 'Land Allocation Pending').length,
+    dbnPending: dataset.filter(d => d.category === 'DBN Approval Pending').length
+  };
+}
+
+// Central helper: fetches + filters the historical snapshot, computes progress vs
+// today's live data (same filters applied to both), and returns everything a
+// caller (Excel/PDF export) needs. Returns null (after showing an error) on failure.
+async function buildHistoryReportData(dateStr) {
+  const errorEl = document.getElementById('history-error');
+  errorEl.style.display = 'none';
+
+  if (!dateStr) {
+    errorEl.textContent = 'Please select a date.';
+    errorEl.style.display = 'block';
+    return null;
+  }
+
+  let rawRows;
+  try {
+    rawRows = await fetchHistorySnapshotRaw(dateStr);
+  } catch (err) {
+    console.error('History fetch error:', err);
+    errorEl.textContent = 'Could not load snapshot data. Make sure the history table & daily snapshot job have been set up in Supabase.';
+    errorEl.style.display = 'block';
+    return null;
+  }
+
+  if (!rawRows.length) {
+    errorEl.textContent = 'No snapshot found for this date. Snapshots are only available from the day the daily snapshot job was set up onward.';
+    errorEl.style.display = 'block';
+    return null;
+  }
+
+  const processed = currentScope === '1757' ? processSheet1757Rows(rawRows) : processSheet577Rows(rawRows);
+  const historicalFiltered = applyCurrentFiltersTo(processed);
+  const currentFiltered = applyCurrentFiltersTo(getActiveScopeData());
+
+  const oldCounts = statusCounts(historicalFiltered);
+  const newCounts = statusCounts(currentFiltered);
+
+  return { dateStr, historicalFiltered, currentFiltered, oldCounts, newCounts };
+}
+
+function progressSummaryRows(oldCounts, newCounts) {
+  const rows = [
+    ['Total Sites', oldCounts.total, newCounts.total],
+    ['Tower Commissioned', oldCounts.commissioned, newCounts.commissioned],
+    ['WIP', oldCounts.wip, newCounts.wip],
+    ['YTS', oldCounts.yts, newCounts.yts],
+    ['Land Allocation Pending', oldCounts.landPending, newCounts.landPending],
+    ['DBN Approval Pending', oldCounts.dbnPending, newCounts.dbnPending]
+  ];
+  return rows.map(r => {
+    const delta = r[2] - r[1];
+    const deltaStr = delta > 0 ? `+${delta}` : `${delta}`;
+    return [r[0], r[1], r[2], deltaStr];
+  });
+}
+
+async function downloadHistoryExcel() {
+  const dateStr = document.getElementById('history-date').value;
+  const result = await buildHistoryReportData(dateStr);
+  if (!result) return;
+
+  const { historicalFiltered, oldCounts, newCounts } = result;
+  const summaryRows = progressSummaryRows(oldCounts, newCounts);
+
+  const wsSummaryData = [
+    ['Mobile Tower Roll-Out Progress Dashboard'],
+    [`Scope: ${currentScope} Sites  |  Status List: ${currentCategory}`],
+    [`Snapshot Date: ${dateStr}  |  Compared To (Today): ${new Date().toISOString().slice(0, 10)}`],
+    [],
+    ['Metric', `As of ${dateStr}`, 'As of Today', 'Change'],
+    ...summaryRows
+  ];
+  const wsSummary = XLSX.utils.aoa_to_sheet(wsSummaryData);
+
+  const wsData = historicalFiltered.map((d, i) => ({
+    '#': i + 1,
+    Scheme: d.scheme || '',
+    District: d.district || '',
+    Block: d.block || '',
+    Village: d.village || '',
+    'Village LGD Code': d.lgdCode || '',
+    Status: d.category || '',
+    Remark: d.remark || ''
+  }));
+  const wsDataSheet = XLSX.utils.json_to_sheet(wsData);
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Progress Summary');
+  XLSX.utils.book_append_sheet(wb, wsDataSheet, `Data (${dateStr})`);
+
+  const catSanitized = currentCategory.replace(/[^a-zA-Z0-9]/g, '_');
+  XLSX.writeFile(wb, `Tower_Report_${currentScope}Sites_${catSanitized}_${dateStr}.xlsx`);
+}
+
+async function downloadHistoryPDF() {
+  const dateStr = document.getElementById('history-date').value;
+  const result = await buildHistoryReportData(dateStr);
+  if (!result) return;
+
+  const { historicalFiltered, oldCounts, newCounts } = result;
+  const summaryRows = progressSummaryRows(oldCounts, newCounts);
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  addWatermarkToPage(doc);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor(18, 32, 54);
+  doc.text("Mobile Tower Roll-Out Progress Dashboard", 40, 40);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`Scope: ${currentScope} Sites  |  Status List: ${currentCategory}  |  Snapshot Date: ${dateStr}`, 40, 56);
+  doc.text(`Report Date: ${getFormattedTodayDate()}`, 760, 40, { align: 'right' });
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(10, 79, 77);
+  doc.text(`Progress: ${dateStr} → Today`, 40, 78);
+
+  doc.autoTable({
+    head: [['Metric', `As of ${dateStr}`, 'As of Today', 'Change']],
+    body: summaryRows,
+    startY: 86,
+    margin: { left: 40, right: 40 },
+    styles: { fontSize: 9, cellPadding: 5, font: "helvetica", textColor: [18, 32, 54] },
+    headStyles: { fillColor: [10, 79, 77], textColor: [255, 255, 255], fontStyle: 'bold' },
+    tableWidth: 400
+  });
+
+  let startY = doc.lastAutoTable.finalY + 24;
+
+  const tableColumns = [
+    { header: '#', dataKey: 'index' },
+    { header: 'SCHEME', dataKey: 'scheme' },
+    { header: 'DISTRICT', dataKey: 'district' },
+    { header: 'BLOCK', dataKey: 'block' },
+    { header: 'VILLAGE', dataKey: 'village' },
+    { header: 'VILLAGE LGD CODE', dataKey: 'lgdCode' },
+    { header: 'STATUS', dataKey: 'category' },
+    { header: 'REMARK', dataKey: 'remark' }
+  ];
+  const tableRows = historicalFiltered.map((d, index) => ({
+    index: index + 1,
+    scheme: d.scheme || '',
+    district: d.district || '',
+    block: d.block || '',
+    village: d.village || '',
+    lgdCode: d.lgdCode || '',
+    category: d.category || '',
+    remark: d.remark || ''
+  }));
+
+  doc.autoTable({
+    columns: tableColumns,
+    body: tableRows,
+    startY: startY,
+    margin: { top: 40, bottom: 30, left: 40, right: 40 },
+    styles: { fontSize: 8, cellPadding: 4, font: "helvetica", textColor: [18, 32, 54], lineColor: [220, 223, 217], lineWidth: 0.5 },
+    headStyles: { fillColor: [10, 79, 77], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5, halign: 'left' },
+    alternateRowStyles: { fillColor: [248, 249, 246] },
+    willDrawPage: function() { addWatermarkToPage(doc); },
+    didDrawPage: function(data) {
+      const pageCount = doc.internal.getNumberOfPages();
+      doc.setFontSize(8);
+      doc.setTextColor(120);
+      doc.text(`Page ${data.pageNumber} of ${pageCount}`, doc.internal.pageSize.width - 40, doc.internal.pageSize.height - 15, { align: 'right' });
+    },
+    showHead: 'everyPage'
+  });
+
+  const catSanitized = currentCategory.replace(/[^a-zA-Z0-9]/g, '_');
+  doc.save(`Tower_Report_${currentScope}Sites_${catSanitized}_${dateStr}.pdf`);
 }
 </script>
 
