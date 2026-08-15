@@ -1402,21 +1402,27 @@ function toggleHistoryPanel() {
   }
 }
 
-// Applies the currently selected Scheme/District/Block/Search + Status-tab filters
-// to any dataset (used for both live data and a historical snapshot).
-function applyCurrentFiltersTo(dataset) {
+// Applies only Scheme/District/Block/Search (no status-tab filter) — used for
+// district-wise breakdowns that need every category represented.
+function applyDropdownFiltersTo(dataset) {
   const fScheme = document.getElementById('f-scheme').value;
   const fDistrict = document.getElementById('f-district').value;
   const fBlock = document.getElementById('f-block').value;
   const fSearch = document.getElementById('f-search').value.toLowerCase().trim();
 
-  const dropdownFiltered = dataset.filter(d => {
+  return dataset.filter(d => {
     if (fScheme !== 'All Schemes' && d.scheme !== fScheme) return false;
     if (fDistrict !== 'All Districts' && d.district !== fDistrict) return false;
     if (fBlock !== 'All Blocks' && d.block !== fBlock) return false;
     if (fSearch && !d.village.toLowerCase().includes(fSearch) && !d.block.toLowerCase().includes(fSearch) && !d.lgdCode.toLowerCase().includes(fSearch)) return false;
     return true;
   });
+}
+
+// Applies the currently selected Scheme/District/Block/Search + Status-tab filters
+// to any dataset (used for both live data and a historical snapshot).
+function applyCurrentFiltersTo(dataset) {
+  const dropdownFiltered = applyDropdownFiltersTo(dataset);
 
   return dropdownFiltered.filter(d => {
     if (currentCategory === 'Total Sites Planned') return true;
@@ -1492,12 +1498,13 @@ async function buildHistoryReportData(dateStr) {
 
   const processed = currentScope === '1757' ? processSheet1757Rows(rawRows) : processSheet577Rows(rawRows);
   const historicalFiltered = applyCurrentFiltersTo(processed);
+  const historicalDropdownFiltered = applyDropdownFiltersTo(processed);
   const currentFiltered = applyCurrentFiltersTo(getActiveScopeData());
 
   const oldCounts = statusCounts(historicalFiltered);
   const newCounts = statusCounts(currentFiltered);
 
-  return { dateStr, historicalFiltered, currentFiltered, oldCounts, newCounts };
+  return { dateStr, historicalFiltered, historicalDropdownFiltered, currentFiltered, oldCounts, newCounts };
 }
 
 function progressSummaryRows(oldCounts, newCounts) {
@@ -1521,7 +1528,7 @@ async function downloadHistoryExcel() {
   const result = await buildHistoryReportData(dateStr);
   if (!result) return;
 
-  const { historicalFiltered, oldCounts, newCounts } = result;
+  const { historicalFiltered, historicalDropdownFiltered, oldCounts, newCounts } = result;
   const summaryRows = progressSummaryRows(oldCounts, newCounts);
 
   const wsSummaryData = [
@@ -1533,6 +1540,22 @@ async function downloadHistoryExcel() {
     ...summaryRows
   ];
   const wsSummary = XLSX.utils.aoa_to_sheet(wsSummaryData);
+
+  // District-wise breakdown, same as the "District-wise Summary" section in Download Summary PDF
+  const districtRows = buildDistrictWiseSummaryRows(historicalDropdownFiltered);
+  const districtHeaders = currentScope === '1757'
+    ? ['District', 'Total Planned', 'Land Allocated', 'Tower Commissioned', 'Land Alloc. Pending', 'DBN Approval Pending', 'WIP', 'YTS']
+    : ['District', 'Total Planned', 'Total Land Allocated', 'WIP', 'YTS', 'Land Alloc. Pending'];
+  const districtKeys = currentScope === '1757'
+    ? ['district', 'total', 'landAllocated', 'commissioned', 'landPending', 'dbnPending', 'wip', 'yts']
+    : ['district', 'total', 'landAllocated', 'wip', 'yts', 'landPending'];
+  const wsDistrictData = [
+    [`District-wise Summary (as of ${dateStr})`],
+    [],
+    districtHeaders,
+    ...districtRows.map(r => districtKeys.map(k => r[k] ?? ''))
+  ];
+  const wsDistrict = XLSX.utils.aoa_to_sheet(wsDistrictData);
 
   const wsData = historicalFiltered.map((d, i) => ({
     '#': i + 1,
@@ -1548,6 +1571,7 @@ async function downloadHistoryExcel() {
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, wsSummary, 'Progress Summary');
+  XLSX.utils.book_append_sheet(wb, wsDistrict, 'District-wise Summary');
   XLSX.utils.book_append_sheet(wb, wsDataSheet, `Data (${dateStr})`);
 
   const catSanitized = currentCategory.replace(/[^a-zA-Z0-9]/g, '_');
@@ -1559,7 +1583,7 @@ async function downloadHistoryPDF() {
   const result = await buildHistoryReportData(dateStr);
   if (!result) return;
 
-  const { historicalFiltered, oldCounts, newCounts } = result;
+  const { historicalFiltered, historicalDropdownFiltered, oldCounts, newCounts } = result;
   const summaryRows = progressSummaryRows(oldCounts, newCounts);
 
   const { jsPDF } = window.jspdf;
@@ -1593,6 +1617,16 @@ async function downloadHistoryPDF() {
   });
 
   let startY = doc.lastAutoTable.finalY + 24;
+
+  // District-wise Summary (as it stood on the snapshot date), mirrors the
+  // same section shown in "Download Summary PDF" for live data.
+  drawDistrictWiseSummaryPDF(doc, historicalDropdownFiltered, startY);
+  startY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : startY) + 24;
+
+  // Start the full data listing on a fresh page for readability.
+  doc.addPage();
+  addWatermarkToPage(doc);
+  startY = 40;
 
   const tableColumns = [
     { header: '#', dataKey: 'index' },
