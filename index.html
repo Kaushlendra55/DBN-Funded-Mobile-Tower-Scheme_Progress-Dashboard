@@ -94,6 +94,19 @@
 
   .kpi-row{display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; margin-bottom:20px;}
   .kpi{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; box-shadow:var(--shadow); position:relative; overflow:hidden;}
+  .kpi.kpi-clickable{cursor:pointer; transition:box-shadow 0.15s, transform 0.15s;}
+  .kpi.kpi-clickable:hover{box-shadow:0 4px 14px rgba(10,79,77,0.18); transform:translateY(-2px);}
+
+  .kpi-download-menu{
+    position:fixed; display:none; z-index:100; background:var(--ink); border-radius:8px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.28); padding:6px; min-width:170px;
+  }
+  .kpi-download-menu.open{display:block;}
+  .kpi-download-menu button{
+    display:flex; align-items:center; gap:8px; width:100%; text-align:left; background:none; border:none;
+    color:#fff; font-family:'IBM Plex Sans', sans-serif; font-size:12.5px; padding:9px 10px; border-radius:5px; cursor:pointer;
+  }
+  .kpi-download-menu button:hover{background:rgba(255,255,255,0.12);}
   .kpi::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--teal);}
   .kpi.k-green::before{background:var(--green);}
   .kpi.k-amber::before{background:var(--amber);}
@@ -359,6 +372,12 @@
   <!-- Dynamic KPI Cards -->
   <div class="kpi-row" id="kpi-row"></div>
 
+  <!-- Popup menu shown when a KPI card is clicked -->
+  <div class="kpi-download-menu" id="kpi-download-menu">
+    <button type="button" id="kpi-download-excel-btn">⬇ Download Excel</button>
+    <button type="button" id="kpi-download-pdf-btn">⬇ Download PDF</button>
+  </div>
+
   <!-- Dynamic Charts -->
   <div class="charts-row">
     <div class="panel">
@@ -483,6 +502,40 @@ window.addEventListener('DOMContentLoaded', () => {
   if (dateEl) dateEl.innerText = getFormattedTodayDate();
   preloadLogoForPDF();
   fetchGoogleSheetData();
+
+  // KPI card click -> show Excel/PDF download popup
+  let pendingDownloadCategory = null;
+  const kpiMenu = document.getElementById('kpi-download-menu');
+
+  document.getElementById('kpi-row').addEventListener('click', function(e) {
+    const card = e.target.closest('.kpi-clickable');
+    if (!card) return;
+    e.stopPropagation();
+    pendingDownloadCategory = card.getAttribute('data-category');
+
+    const rect = card.getBoundingClientRect();
+    const menuWidth = 190;
+    let left = rect.left;
+    if (left + menuWidth > window.innerWidth - 10) left = window.innerWidth - menuWidth - 10;
+    kpiMenu.style.left = left + 'px';
+    kpiMenu.style.top = (rect.bottom + 6) + 'px';
+    kpiMenu.classList.add('open');
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!kpiMenu.contains(e.target) && !e.target.closest('.kpi-clickable')) {
+      kpiMenu.classList.remove('open');
+    }
+  });
+
+  document.getElementById('kpi-download-excel-btn').addEventListener('click', function() {
+    if (pendingDownloadCategory) downloadCardExcel(pendingDownloadCategory);
+    kpiMenu.classList.remove('open');
+  });
+  document.getElementById('kpi-download-pdf-btn').addEventListener('click', function() {
+    if (pendingDownloadCategory) downloadCardPDF(pendingDownloadCategory);
+    kpiMenu.classList.remove('open');
+  });
 });
 
 function showKpiSkeleton(count = 6) {
@@ -863,13 +916,13 @@ function renderKPIs(baseFiltered) {
     const landAllocated = baseFiltered.filter(d => d.category === 'DBN Approval Pending' || d.category === 'YTS' || d.category === 'WIP' || d.category === 'Tower Commissioned').length;
 
     cards = [
-      { label: 'Total Sites Planned',     value: total,        sub: null,                              colorKey: 'default', info: 'Total number of tower sites planned under this scheme.' },
-      { label: 'Land Allocated',          value: landAllocated,sub: null,                              colorKey: 'teal2',   info: 'Sites where land has been allocated — includes DBN approval pending, WIP, YTS and commissioned sites.' },
-      { label: 'Tower Commissioned',      value: commissioned, sub: `${calcPercent(commissioned)}%`,   colorKey: 'green',   info: 'Sites where the tower has been fully installed and is live.' },
-      { label: 'Land Allocation Pending', value: landPending,  sub: `${calcPercent(landPending)}%`,    colorKey: 'red',     info: 'Sites where land has not yet been allocated.' },
-      { label: 'DBN Approval Pending',    value: dbnPending,   sub: `${calcPercent(dbnPending)}%`,     colorKey: 'orange',  info: 'Land allocated, but waiting for DBN (funding body) approval to begin construction.' },
-      { label: 'WIP',                     value: wip,          sub: `${calcPercent(wip)}%`,            colorKey: 'amber',   info: 'Work In Progress — tower construction has started but is not yet complete.' },
-      { label: 'YTS',                     value: yts,          sub: `${calcPercent(yts)}%`,            colorKey: 'rose',    info: 'Yet To Start — approved, but construction work has not begun yet.' }
+      { label: 'Total Sites Planned',     value: total,        sub: null,                              colorKey: 'default', categoryKey: 'Total Sites Planned' },
+      { label: 'Land Allocated',          value: landAllocated,sub: null,                              colorKey: 'teal2',   categoryKey: 'Land Allocated' },
+      { label: 'Tower Commissioned',      value: commissioned, sub: `${calcPercent(commissioned)}%`,   colorKey: 'green',   categoryKey: 'Tower Commissioned' },
+      { label: 'Land Allocation Pending', value: landPending,  sub: `${calcPercent(landPending)}%`,    colorKey: 'red',     categoryKey: 'Land Allocation Pending' },
+      { label: 'DBN Approval Pending',    value: dbnPending,   sub: `${calcPercent(dbnPending)}%`,     colorKey: 'orange',  categoryKey: 'DBN Approval Pending' },
+      { label: 'WIP',                     value: wip,          sub: `${calcPercent(wip)}%`,            colorKey: 'amber',   categoryKey: 'WIP' },
+      { label: 'YTS',                     value: yts,          sub: `${calcPercent(yts)}%`,            colorKey: 'rose',    categoryKey: 'YTS' }
     ];
   } else {
     const landAllocated = baseFiltered.filter(d => d.category === 'WIP' || d.category === 'YTS' || d.category === 'Tower Commissioned').length;
@@ -878,11 +931,11 @@ function renderKPIs(baseFiltered) {
     const landPending = baseFiltered.filter(d => d.category === 'Land Allocation Pending').length;
 
     cards = [
-      { label: 'Total Sites Planned',     value: total,         sub: '100%',                          colorKey: 'default', info: 'Total number of new sites planned under the 4G Saturation scheme.' },
-      { label: 'Total Land Allocated',    value: landAllocated, sub: `${calcPercent(landAllocated)}%`, colorKey: 'teal2',   info: 'Sites where land has been allocated — includes WIP, YTS and commissioned sites.' },
-      { label: 'Work in Progress (WIP)',  value: wip,           sub: `${calcPercent(wip)}%`,           colorKey: 'amber',   info: 'Tower construction has started but is not yet complete.' },
-      { label: 'Yet To Start (YTS)',      value: yts,           sub: `${calcPercent(yts)}%`,           colorKey: 'rose',    info: 'Approved, but construction work has not begun yet.' },
-      { label: 'Land Allocation Pending', value: landPending,   sub: `${calcPercent(landPending)}%`,   colorKey: 'red',     info: 'Sites where land has not yet been allocated.' }
+      { label: 'Total Sites Planned',     value: total,         sub: '100%',                          colorKey: 'default', categoryKey: 'Total Sites Planned' },
+      { label: 'Total Land Allocated',    value: landAllocated, sub: `${calcPercent(landAllocated)}%`, colorKey: 'teal2',   categoryKey: 'Total Land Allocated' },
+      { label: 'Work in Progress (WIP)',  value: wip,           sub: `${calcPercent(wip)}%`,           colorKey: 'amber',   categoryKey: 'WIP' },
+      { label: 'Yet To Start (YTS)',      value: yts,           sub: `${calcPercent(yts)}%`,           colorKey: 'rose',    categoryKey: 'YTS' },
+      { label: 'Land Allocation Pending', value: landPending,   sub: `${calcPercent(landPending)}%`,   colorKey: 'red',     categoryKey: 'Land Allocation Pending' }
     ];
   }
 
@@ -890,7 +943,7 @@ function renderKPIs(baseFiltered) {
 
   const classForColor = { default: '', green: 'k-green', amber: 'k-amber', red: 'k-red', teal2: 'k-teal2', orange: 'k-orange', rose: 'k-rose' };
   kpiRow.innerHTML = cards.map(c => `
-    <div class="kpi ${classForColor[c.colorKey]}">
+    <div class="kpi ${classForColor[c.colorKey]} kpi-clickable" data-category="${c.categoryKey}" title="Click to download this list">
       <div class="lbl">${c.label}</div>
       <div class="val">${c.value}</div>
       ${c.sub !== null ? `<div class="sub">${c.sub}</div>` : ''}
@@ -1269,6 +1322,102 @@ function exportCardsChartsPDF() {
 
   const catSanitized = currentCategory.replace(/[^a-zA-Z0-9]/g, '_');
   doc.save(`Tower_Summary_${currentScope}Sites_${catSanitized}.pdf`);
+}
+
+// Filters a dataset down to one KPI-card category (mirrors the tab-filter logic
+// used elsewhere, but parameterized so it can be used for any card, not just
+// the currently active status-list tab).
+function filterDataByCategory(dataset, categoryKey) {
+  if (categoryKey === 'Total Sites Planned') return dataset;
+  if (categoryKey === 'Land Allocated') return dataset.filter(d => d.category === 'DBN Approval Pending' || d.category === 'YTS' || d.category === 'WIP' || d.category === 'Tower Commissioned');
+  if (categoryKey === 'Total Land Allocated') return dataset.filter(d => d.category === 'WIP' || d.category === 'YTS' || d.category === 'Tower Commissioned');
+  return dataset.filter(d => d.category === categoryKey);
+}
+
+function downloadCardExcel(categoryKey) {
+  const dropdownFiltered = applyDropdownFiltersTo(getActiveScopeData());
+  const listData = filterDataByCategory(dropdownFiltered, categoryKey);
+  if (!listData.length) { alert('No data available to export.'); return; }
+
+  const wsData = listData.map((d, i) => ({
+    '#': i + 1,
+    Scheme: d.scheme || '',
+    District: d.district || '',
+    Block: d.block || '',
+    Village: d.village || '',
+    'Village LGD Code': d.lgdCode || '',
+    Status: d.category || '',
+    Remark: d.remark || ''
+  }));
+  const ws = XLSX.utils.json_to_sheet(wsData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, categoryKey.substring(0, 31) || 'Data');
+
+  const catSanitized = categoryKey.replace(/[^a-zA-Z0-9]/g, '_');
+  XLSX.writeFile(wb, `Tower_Report_${currentScope}Sites_${catSanitized}.xlsx`);
+}
+
+function downloadCardPDF(categoryKey) {
+  const dropdownFiltered = applyDropdownFiltersTo(getActiveScopeData());
+  const listData = filterDataByCategory(dropdownFiltered, categoryKey);
+  if (!listData.length) { alert('No data available to export.'); return; }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  addWatermarkToPage(doc);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor(18, 32, 54);
+  doc.text("Mobile Tower Roll-Out Progress Dashboard", 40, 40);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`Scope: ${currentScope} Sites  |  Selected List: ${categoryKey}  |  Total Count: ${listData.length}`, 40, 56);
+  doc.text(`Report Date: ${getFormattedTodayDate()}`, 760, 40, { align: 'right' });
+
+  const tableColumns = [
+    { header: '#', dataKey: 'index' },
+    { header: 'SCHEME', dataKey: 'scheme' },
+    { header: 'DISTRICT', dataKey: 'district' },
+    { header: 'BLOCK', dataKey: 'block' },
+    { header: 'VILLAGE', dataKey: 'village' },
+    { header: 'VILLAGE LGD CODE', dataKey: 'lgdCode' },
+    { header: 'STATUS', dataKey: 'category' },
+    { header: 'REMARK', dataKey: 'remark' }
+  ];
+  const tableRows = listData.map((d, index) => ({
+    index: index + 1,
+    scheme: d.scheme || '',
+    district: d.district || '',
+    block: d.block || '',
+    village: d.village || '',
+    lgdCode: d.lgdCode || '',
+    category: d.category || '',
+    remark: d.remark || ''
+  }));
+
+  doc.autoTable({
+    columns: tableColumns,
+    body: tableRows,
+    startY: 70,
+    margin: { top: 40, bottom: 30, left: 40, right: 40 },
+    styles: { fontSize: 8, cellPadding: 4, font: "helvetica", textColor: [18, 32, 54], lineColor: [220, 223, 217], lineWidth: 0.5 },
+    headStyles: { fillColor: [10, 79, 77], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5, halign: 'left' },
+    alternateRowStyles: { fillColor: [248, 249, 246] },
+    willDrawPage: function() { addWatermarkToPage(doc); },
+    didDrawPage: function(data) {
+      const pageCount = doc.internal.getNumberOfPages();
+      doc.setFontSize(8);
+      doc.setTextColor(120);
+      doc.text(`Page ${data.pageNumber} of ${pageCount}`, doc.internal.pageSize.width - 40, doc.internal.pageSize.height - 15, { align: 'right' });
+    },
+    showHead: 'everyPage'
+  });
+
+  const catSanitized = categoryKey.replace(/[^a-zA-Z0-9]/g, '_');
+  doc.save(`Tower_Report_${currentScope}Sites_${catSanitized}.pdf`);
 }
 
 function exportFullPDF() {
