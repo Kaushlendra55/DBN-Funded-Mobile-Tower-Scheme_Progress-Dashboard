@@ -514,7 +514,7 @@ async function fetchLastBackendUpdate() {
     if (latest) {
       const dateStr = latest.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
       const timeStr = latest.toLocaleTimeString();
-      el.innerText = `| Backend Last Updated: ${dateStr}, ${timeStr}`;
+      el.innerText = `| Last Updated On: ${dateStr}, ${timeStr}`;
     } else {
       el.innerText = '';
     }
