@@ -1334,10 +1334,36 @@ function filterDataByCategory(dataset, categoryKey) {
   return dataset.filter(d => d.category === categoryKey);
 }
 
+// District-wise count of sites for one specific category (used for KPI-card downloads).
+function buildCategoryDistrictCounts(listData) {
+  const counts = {};
+  listData.forEach(d => {
+    const dist = d.district || 'Unknown';
+    counts[dist] = (counts[dist] || 0) + 1;
+  });
+  const rows = Object.keys(counts).sort().map(dist => [dist, counts[dist]]);
+  rows.push(['TOTAL', listData.length]);
+  return rows;
+}
+
 function downloadCardExcel(categoryKey) {
   const dropdownFiltered = applyDropdownFiltersTo(getActiveScopeData());
   const listData = filterDataByCategory(dropdownFiltered, categoryKey);
   if (!listData.length) { alert('No data available to export.'); return; }
+
+  const fSchemeVal = document.getElementById('f-scheme').value;
+  const districtRows = buildCategoryDistrictCounts(listData);
+
+  const wsSummaryData = [
+    ['Mobile Tower Roll-Out Progress Dashboard'],
+    [`Scope: ${currentScope} Sites  |  Scheme: ${fSchemeVal}  |  Selected KPI: ${categoryKey}  |  Total Count: ${listData.length}`],
+    [`Report Date: ${getFormattedTodayDate()}`],
+    [],
+    ['District-wise Summary'],
+    ['District', `Count (${categoryKey})`],
+    ...districtRows
+  ];
+  const wsSummary = XLSX.utils.aoa_to_sheet(wsSummaryData);
 
   const wsData = listData.map((d, i) => ({
     '#': i + 1,
@@ -1349,9 +1375,11 @@ function downloadCardExcel(categoryKey) {
     Status: d.category || '',
     Remark: d.remark || ''
   }));
-  const ws = XLSX.utils.json_to_sheet(wsData);
+  const wsDataSheet = XLSX.utils.json_to_sheet(wsData);
+
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, categoryKey.substring(0, 31) || 'Data');
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'District-wise Summary');
+  XLSX.utils.book_append_sheet(wb, wsDataSheet, categoryKey.substring(0, 25) || 'Data');
 
   const catSanitized = categoryKey.replace(/[^a-zA-Z0-9]/g, '_');
   XLSX.writeFile(wb, `Tower_Report_${currentScope}Sites_${catSanitized}.xlsx`);
@@ -1361,6 +1389,9 @@ function downloadCardPDF(categoryKey) {
   const dropdownFiltered = applyDropdownFiltersTo(getActiveScopeData());
   const listData = filterDataByCategory(dropdownFiltered, categoryKey);
   if (!listData.length) { alert('No data available to export.'); return; }
+
+  const fSchemeVal = document.getElementById('f-scheme').value;
+  const districtRows = buildCategoryDistrictCounts(listData);
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
@@ -1374,8 +1405,35 @@ function downloadCardPDF(categoryKey) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(100, 100, 100);
-  doc.text(`Scope: ${currentScope} Sites  |  Selected List: ${categoryKey}  |  Total Count: ${listData.length}`, 40, 56);
+  doc.text(`Scope: ${currentScope} Sites  |  Scheme: ${fSchemeVal}  |  Selected KPI: ${categoryKey}  |  Total Count: ${listData.length}`, 40, 56);
   doc.text(`Report Date: ${getFormattedTodayDate()}`, 760, 40, { align: 'right' });
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(10, 79, 77);
+  doc.text(`District-wise Summary — ${categoryKey}`, 40, 78);
+
+  doc.autoTable({
+    head: [['District', `Count (${categoryKey})`]],
+    body: districtRows,
+    startY: 86,
+    margin: { left: 40, right: 40 },
+    styles: { fontSize: 9, cellPadding: 5, font: "helvetica", textColor: [18, 32, 54] },
+    headStyles: { fillColor: [10, 79, 77], textColor: [255, 255, 255], fontStyle: 'bold' },
+    didParseCell: function(data) {
+      if (data.section === 'body' && data.row.raw[0] === 'TOTAL') {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fillColor = [232, 236, 229];
+      }
+    },
+    tableWidth: 300,
+    willDrawPage: function() { addWatermarkToPage(doc); },
+    showHead: 'everyPage'
+  });
+
+  // Full data list starts on a fresh page for readability.
+  doc.addPage();
+  addWatermarkToPage(doc);
 
   const tableColumns = [
     { header: '#', dataKey: 'index' },
@@ -1401,7 +1459,7 @@ function downloadCardPDF(categoryKey) {
   doc.autoTable({
     columns: tableColumns,
     body: tableRows,
-    startY: 70,
+    startY: 40,
     margin: { top: 40, bottom: 30, left: 40, right: 40 },
     styles: { fontSize: 8, cellPadding: 4, font: "helvetica", textColor: [18, 32, 54], lineColor: [220, 223, 217], lineWidth: 0.5 },
     headStyles: { fillColor: [10, 79, 77], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5, halign: 'left' },
