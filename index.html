@@ -92,6 +92,31 @@
   .reset-btn:hover{background:var(--teal-deep);}
   .filter-count{font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--ink-soft); margin-left:auto; align-self:center;}
 
+  /* Multi-select checkbox dropdown (Scheme / District / Block) */
+  .ms-wrap{position:relative;}
+  .ms-btn{
+    font-family:'IBM Plex Sans', sans-serif; font-size:13px; color:var(--ink); padding:8px 30px 8px 12px;
+    border-radius:6px; border:1px solid #C7CBC3; background:#fff; cursor:pointer; text-align:left; min-width:170px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; position:relative; display:block; width:100%;
+  }
+  .ms-btn::after{
+    content:"▾"; position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--ink-soft); font-size:11px;
+  }
+  .ms-btn:focus{outline:2px solid var(--teal);}
+  .ms-panel{
+    display:none; position:absolute; top:calc(100% + 4px); left:0; min-width:220px; max-height:260px; overflow-y:auto;
+    background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.16); padding:6px; z-index:50;
+  }
+  .ms-panel.open{display:block;}
+  .ms-option{
+    display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:5px; cursor:pointer;
+    font-family:'IBM Plex Sans', sans-serif; font-size:12.5px; color:var(--ink);
+  }
+  .ms-option:hover{background:var(--slate-bg);}
+  .ms-option input{margin:0; flex-shrink:0;}
+  .ms-option-all{font-weight:600;}
+  .ms-option-divider{height:1px; background:var(--line); margin:4px 2px;}
+
   .kpi-row{display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; margin-bottom:20px;}
   .kpi{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; box-shadow:var(--shadow); position:relative; overflow:hidden;}
   .kpi.kpi-clickable{cursor:pointer; transition:box-shadow 0.15s, transform 0.15s;}
@@ -361,9 +386,27 @@
       <label for="f-tab-dropdown"><b>Select Tab / Status List</b></label>
       <select id="f-tab-dropdown" onchange="onTabDropdownChange(this.value)" style="font-weight:600; background:#EAF3F2; border-color:var(--teal);"></select>
     </div>
-    <div class="field"><label for="f-scheme">Scheme</label><select id="f-scheme" onchange="applyFilters()"></select></div>
-    <div class="field"><label for="f-district">District</label><select id="f-district" onchange="onDistrictChange()"></select></div>
-    <div class="field"><label for="f-block">Block</label><select id="f-block" onchange="onBlockChange()"></select></div>
+    <div class="field ms-field">
+      <label>Scheme</label>
+      <div class="ms-wrap">
+        <button type="button" class="ms-btn" id="ms-btn-scheme" onclick="toggleMsPanel('scheme')">All Schemes</button>
+        <div class="ms-panel" id="ms-panel-scheme"></div>
+      </div>
+    </div>
+    <div class="field ms-field">
+      <label>District</label>
+      <div class="ms-wrap">
+        <button type="button" class="ms-btn" id="ms-btn-district" onclick="toggleMsPanel('district')">All Districts</button>
+        <div class="ms-panel" id="ms-panel-district"></div>
+      </div>
+    </div>
+    <div class="field ms-field">
+      <label>Block</label>
+      <div class="ms-wrap">
+        <button type="button" class="ms-btn" id="ms-btn-block" onclick="toggleMsPanel('block')">All Blocks</button>
+        <div class="ms-panel" id="ms-panel-block"></div>
+      </div>
+    </div>
     <div class="field" style="flex:1; min-width:180px;"><label for="f-search">Search Village / Block / LGD Code</label><input id="f-search" type="text" placeholder="Type to search..." oninput="onSearchInput()"></div>
     <button class="reset-btn" onclick="resetFilters()">Reset Filters</button>
     <div class="filter-count" id="filter-count"></div>
@@ -502,6 +545,13 @@ window.addEventListener('DOMContentLoaded', () => {
   if (dateEl) dateEl.innerText = getFormattedTodayDate();
   preloadLogoForPDF();
   fetchGoogleSheetData();
+
+  // Close any open Scheme/District/Block multi-select panel when clicking outside it
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.ms-wrap')) {
+      document.querySelectorAll('.ms-panel.open').forEach(p => p.classList.remove('open'));
+    }
+  });
 
   // KPI card click -> show Excel/PDF download popup
   let pendingDownloadCategory = null;
@@ -722,7 +772,7 @@ function renderTabs() {
   if (currentScope === '1757') {
     tabs = ['Total Sites Planned', 'Land Allocated', 'Tower Commissioned', 'Land Allocation Pending', 'DBN Approval Pending', 'WIP', 'YTS'];
   } else {
-    tabs = ['Total Sites Planned', 'Total Land Allocated', 'WIP', 'YTS', 'Land Allocation Pending'];
+    tabs = ['Total Sites Planned', 'Total Land Allocated', 'Tower Commissioned', 'WIP', 'YTS', 'Land Allocation Pending'];
   }
 
   const container = document.getElementById('status-tabs');
@@ -735,58 +785,127 @@ function renderTabs() {
   drop.innerHTML = tabs.map(tab => `<option value="${tab}" ${currentCategory === tab ? 'selected' : ''}>${tab}</option>`).join('');
 }
 
+// Multi-select state for Scheme / District / Block filters.
+// An empty array for a key means "All" (no filter applied for that field).
+let filterSelections = { scheme: [], district: [], block: [] };
+const MS_CONFIG = {
+  scheme: { allLabel: 'All Schemes', singular: 'Scheme' },
+  district: { allLabel: 'All Districts', singular: 'District' },
+  block: { allLabel: 'All Blocks', singular: 'Block' }
+};
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+function matchesSelection(value, selectedArr) {
+  return selectedArr.length === 0 || selectedArr.includes(value);
+}
+
+function msButtonText(key) {
+  const sel = filterSelections[key];
+  const cfg = MS_CONFIG[key];
+  if (sel.length === 0) return cfg.allLabel;
+  if (sel.length === 1) return sel[0];
+  return `${sel.length} ${cfg.singular}s selected`;
+}
+
+// Renders the checkbox list for a filter, given the full list of valid options for it.
+function renderMsPanel(key, options) {
+  // Drop any previously-selected values that are no longer valid options (e.g. after
+  // switching scope, or after narrowing Blocks down by a new District selection).
+  filterSelections[key] = filterSelections[key].filter(v => options.includes(v));
+
+  const panel = document.getElementById('ms-panel-' + key);
+  const sel = filterSelections[key];
+  panel.innerHTML = `
+    <label class="ms-option ms-option-all"><input type="checkbox" ${sel.length === 0 ? 'checked' : ''} onchange="toggleMsAll('${key}')">${escapeHtml(MS_CONFIG[key].allLabel)}</label>
+    <div class="ms-option-divider"></div>
+    ${options.map(opt => `<label class="ms-option"><input type="checkbox" value="${escapeHtml(opt)}" ${sel.includes(opt) ? 'checked' : ''} onchange="toggleMsOption('${key}', this.value)">${escapeHtml(opt)}</label>`).join('')}
+  `;
+  document.getElementById('ms-btn-' + key).textContent = msButtonText(key);
+}
+
+function refreshMsButtonLabel(key) {
+  document.getElementById('ms-btn-' + key).textContent = msButtonText(key);
+}
+
+function toggleMsPanel(key) {
+  const panel = document.getElementById('ms-panel-' + key);
+  const isOpen = panel.classList.contains('open');
+  document.querySelectorAll('.ms-panel.open').forEach(p => p.classList.remove('open'));
+  if (!isOpen) panel.classList.add('open');
+}
+
+function toggleMsAll(key) {
+  filterSelections[key] = [];
+  const panel = document.getElementById('ms-panel-' + key);
+  panel.querySelectorAll('input[type="checkbox"]').forEach((cb, i) => { cb.checked = (i === 0); });
+  refreshMsButtonLabel(key);
+  afterFilterChange(key);
+}
+
+function toggleMsOption(key, value) {
+  const sel = filterSelections[key];
+  const idx = sel.indexOf(value);
+  if (idx >= 0) sel.splice(idx, 1); else sel.push(value);
+
+  const panel = document.getElementById('ms-panel-' + key);
+  const allCb = panel.querySelector('.ms-option-all input');
+  if (allCb) allCb.checked = sel.length === 0;
+  refreshMsButtonLabel(key);
+  afterFilterChange(key);
+}
+
+function afterFilterChange(key) {
+  if (key === 'district') updateBlockOptions();
+  if (key === 'block') autoSelectDistrictsFromBlocks();
+  applyFilters();
+}
+
+// When Block(s) are chosen directly (without District pre-selected), auto-fill
+// District with whichever district(s) those blocks belong to.
+function autoSelectDistrictsFromBlocks() {
+  if (filterSelections.district.length > 0) return; // user already chose district(s) explicitly
+  if (filterSelections.block.length === 0) return;
+
+  const scopeData = getActiveScopeData();
+  const impliedDistricts = [...new Set(
+    filterSelections.block.map(b => {
+      const match = scopeData.find(d => d.block === b);
+      return match ? match.district : null;
+    }).filter(Boolean)
+  )];
+
+  if (impliedDistricts.length) {
+    filterSelections.district = impliedDistricts;
+    updateBlockOptions();
+    refreshMsButtonLabel('district');
+  }
+}
+
 function initFilterOptions() {
   const scopeData = getActiveScopeData();
-  const schemes = ['All Schemes', ...new Set(scopeData.map(d => d.scheme).filter(Boolean))].sort(alphaSort);
-  const districts = ['All Districts', ...new Set(scopeData.map(d => d.district).filter(Boolean))].sort(alphaSort);
+  const schemes = [...new Set(scopeData.map(d => d.scheme).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const districts = [...new Set(scopeData.map(d => d.district).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
-  populateSelect('f-scheme', schemes);
-  populateSelect('f-district', districts);
+  renderMsPanel('scheme', schemes);
+  renderMsPanel('district', districts);
   updateBlockOptions();
   renderTabs();
 }
 
-function alphaSort(a, b) {
-  if (a === 'All Schemes' || a === 'All Districts' || a === 'All Blocks') return -1;
-  if (b === 'All Schemes' || b === 'All Districts' || b === 'All Blocks') return 1;
-  return a.localeCompare(b);
-}
-
-// Blocks are scoped to the currently selected district only, sorted A-Z
+// Blocks are scoped to the currently selected district(s), sorted A-Z
 function updateBlockOptions() {
   const scopeData = getActiveScopeData();
-  const fDistrict = document.getElementById('f-district').value || 'All Districts';
+  const selDistricts = filterSelections.district;
 
-  const districtScopedData = fDistrict === 'All Districts'
+  const districtScopedData = selDistricts.length === 0
     ? scopeData
-    : scopeData.filter(d => d.district === fDistrict);
+    : scopeData.filter(d => selDistricts.includes(d.district));
 
-  const blocks = ['All Blocks', ...new Set(districtScopedData.map(d => d.block).filter(Boolean))].sort(alphaSort);
-  populateSelect('f-block', blocks);
-}
-
-function onDistrictChange() {
-  updateBlockOptions();
-  applyFilters();
-}
-
-// When a Block is chosen directly (without picking a District first), auto-fill the
-// District dropdown with the district that block belongs to.
-function onBlockChange() {
-  const scopeData = getActiveScopeData();
-  const blockSelect = document.getElementById('f-block');
-  const districtSelect = document.getElementById('f-district');
-  const selectedBlock = blockSelect.value;
-
-  if (selectedBlock && selectedBlock !== 'All Blocks') {
-    const match = scopeData.find(d => d.block === selectedBlock);
-    if (match && match.district && districtSelect.value !== match.district) {
-      districtSelect.value = match.district;
-      updateBlockOptions();
-      blockSelect.value = selectedBlock;
-    }
-  }
-  applyFilters();
+  const blocks = [...new Set(districtScopedData.map(d => d.block).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  renderMsPanel('block', blocks);
 }
 
 // When typing in the Village/Block/LGD search box, auto-fill District (and Block, if it
@@ -801,31 +920,28 @@ function onSearchInput() {
 function runSearchFilter() {
   const searchVal = document.getElementById('f-search').value.toLowerCase().trim();
 
-  if (searchVal) {
+  if (searchVal && filterSelections.district.length === 0) {
     const scopeData = getActiveScopeData();
-    const fScheme = document.getElementById('f-scheme').value;
 
     const matches = scopeData.filter(d => {
-      if (fScheme !== 'All Schemes' && d.scheme !== fScheme) return false;
+      if (!matchesSelection(d.scheme, filterSelections.scheme)) return false;
       return d.village.toLowerCase().includes(searchVal) || d.block.toLowerCase().includes(searchVal) || d.lgdCode.toLowerCase().includes(searchVal);
     });
 
     if (matches.length) {
       const uniqueDistricts = [...new Set(matches.map(d => d.district).filter(Boolean))];
       if (uniqueDistricts.length === 1) {
-        const districtSelect = document.getElementById('f-district');
-        if (districtSelect.value !== uniqueDistricts[0]) {
-          districtSelect.value = uniqueDistricts[0];
-          updateBlockOptions();
+        filterSelections.district = uniqueDistricts;
+        refreshMsButtonLabel('district');
+
+        const districtScopedBlocks = [...new Set(scopeData.filter(d => uniqueDistricts.includes(d.district)).map(d => d.block).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+        if (filterSelections.block.length === 0) {
+          const blockMatches = matches.filter(d => d.district === uniqueDistricts[0]);
+          const uniqueBlocks = [...new Set(blockMatches.map(d => d.block).filter(Boolean))];
+          if (uniqueBlocks.length === 1) filterSelections.block = uniqueBlocks;
         }
-        const blockMatches = matches.filter(d => d.district === uniqueDistricts[0]);
-        const uniqueBlocks = [...new Set(blockMatches.map(d => d.block).filter(Boolean))];
-        if (uniqueBlocks.length === 1) {
-          const blockSelect = document.getElementById('f-block');
-          if ([...blockSelect.options].some(o => o.value === uniqueBlocks[0])) {
-            blockSelect.value = uniqueBlocks[0];
-          }
-        }
+        renderMsPanel('block', districtScopedBlocks);
       }
     }
   }
@@ -833,16 +949,8 @@ function runSearchFilter() {
   applyFilters();
 }
 
-function populateSelect(id, list, currentValue = null) {
-  const select = document.getElementById(id);
-  select.innerHTML = list.map(item => `<option value="${item}">${item}</option>`).join('');
-  if (currentValue && list.includes(currentValue)) select.value = currentValue;
-}
-
 function resetFilters() {
-  document.getElementById('f-scheme').value = 'All Schemes';
-  document.getElementById('f-district').value = 'All Districts';
-  document.getElementById('f-block').value = 'All Blocks';
+  filterSelections = { scheme: [], district: [], block: [] };
   document.getElementById('f-search').value = '';
   currentCategory = 'Total Sites Planned';
   initFilterOptions();
@@ -850,20 +958,7 @@ function resetFilters() {
 }
 
 function applyFilters() {
-  const fScheme = document.getElementById('f-scheme').value;
-  const fDistrict = document.getElementById('f-district').value;
-  const fBlock = document.getElementById('f-block').value;
-  const fSearch = document.getElementById('f-search').value.toLowerCase().trim();
-
-  const scopeData = getActiveScopeData();
-
-  const dropdownFiltered = scopeData.filter(d => {
-    if (fScheme !== 'All Schemes' && d.scheme !== fScheme) return false;
-    if (fDistrict !== 'All Districts' && d.district !== fDistrict) return false;
-    if (fBlock !== 'All Blocks' && d.block !== fBlock) return false;
-    if (fSearch && !d.village.toLowerCase().includes(fSearch) && !d.block.toLowerCase().includes(fSearch) && !d.lgdCode.toLowerCase().includes(fSearch)) return false;
-    return true;
-  });
+  const dropdownFiltered = applyDropdownFiltersTo(getActiveScopeData());
 
   currentTabFilteredData = dropdownFiltered.filter(d => {
     if (currentCategory === 'Total Sites Planned') return true;
@@ -921,21 +1016,23 @@ function renderKPIs(baseFiltered) {
       { label: 'Tower Commissioned',      value: commissioned, sub: `${calcPercent(commissioned)}%`,   colorKey: 'green',   categoryKey: 'Tower Commissioned' },
       { label: 'Land Allocation Pending', value: landPending,  sub: `${calcPercent(landPending)}%`,    colorKey: 'red',     categoryKey: 'Land Allocation Pending' },
       { label: 'DBN Approval Pending',    value: dbnPending,   sub: `${calcPercent(dbnPending)}%`,     colorKey: 'orange',  categoryKey: 'DBN Approval Pending' },
-      { label: 'WIP',                     value: wip,          sub: `${calcPercent(wip)}%`,            colorKey: 'amber',   categoryKey: 'WIP' },
-      { label: 'YTS',                     value: yts,          sub: `${calcPercent(yts)}%`,            colorKey: 'rose',    categoryKey: 'YTS' }
+      { label: 'Work in Progress',        value: wip,          sub: `${calcPercent(wip)}%`,            colorKey: 'amber',   categoryKey: 'WIP' },
+      { label: 'Work Yet To Start',       value: yts,          sub: `${calcPercent(yts)}%`,            colorKey: 'rose',    categoryKey: 'YTS' }
     ];
   } else {
+    const commissioned577 = baseFiltered.filter(d => d.category === 'Tower Commissioned').length;
     const landAllocated = baseFiltered.filter(d => d.category === 'WIP' || d.category === 'YTS' || d.category === 'Tower Commissioned').length;
     const wip = baseFiltered.filter(d => d.category === 'WIP').length;
     const yts = baseFiltered.filter(d => d.category === 'YTS').length;
     const landPending = baseFiltered.filter(d => d.category === 'Land Allocation Pending').length;
 
     cards = [
-      { label: 'Total Sites Planned',     value: total,         sub: '100%',                          colorKey: 'default', categoryKey: 'Total Sites Planned' },
-      { label: 'Total Land Allocated',    value: landAllocated, sub: `${calcPercent(landAllocated)}%`, colorKey: 'teal2',   categoryKey: 'Total Land Allocated' },
-      { label: 'Work in Progress (WIP)',  value: wip,           sub: `${calcPercent(wip)}%`,           colorKey: 'amber',   categoryKey: 'WIP' },
-      { label: 'Yet To Start (YTS)',      value: yts,           sub: `${calcPercent(yts)}%`,           colorKey: 'rose',    categoryKey: 'YTS' },
-      { label: 'Land Allocation Pending', value: landPending,   sub: `${calcPercent(landPending)}%`,   colorKey: 'red',     categoryKey: 'Land Allocation Pending' }
+      { label: 'Total Sites Planned',     value: total,          sub: null,                              colorKey: 'default', categoryKey: 'Total Sites Planned' },
+      { label: 'Total Land Allocated',    value: landAllocated,  sub: `${calcPercent(landAllocated)}%`,   colorKey: 'teal2',   categoryKey: 'Total Land Allocated' },
+      { label: 'On Air/Commissioned',     value: commissioned577,sub: `${calcPercent(commissioned577)}%`, colorKey: 'green',   categoryKey: 'Tower Commissioned' },
+      { label: 'Work in Progress (WIP)',  value: wip,            sub: `${calcPercent(wip)}%`,             colorKey: 'amber',   categoryKey: 'WIP' },
+      { label: 'Yet To Start (YTS)',      value: yts,            sub: `${calcPercent(yts)}%`,             colorKey: 'rose',    categoryKey: 'YTS' },
+      { label: 'Land Allocation Pending', value: landPending,    sub: `${calcPercent(landPending)}%`,     colorKey: 'red',     categoryKey: 'Land Allocation Pending' }
     ];
   }
 
@@ -1261,25 +1358,15 @@ function exportCardsChartsPDF() {
     return;
   }
 
-  const fScheme = document.getElementById('f-scheme').value;
-  const fDistrict = document.getElementById('f-district').value;
-  const fBlock = document.getElementById('f-block').value;
   const fSearch = document.getElementById('f-search').value.toLowerCase().trim();
 
   const appliedFilters = [];
-  if (fScheme && fScheme !== 'All Schemes') appliedFilters.push(`Scheme: ${fScheme}`);
-  if (fDistrict && fDistrict !== 'All Districts') appliedFilters.push(`District: ${fDistrict}`);
-  if (fBlock && fBlock !== 'All Blocks') appliedFilters.push(`Block: ${fBlock}`);
+  if (filterSelections.scheme.length) appliedFilters.push(`Scheme: ${filterSelections.scheme.join(', ')}`);
+  if (filterSelections.district.length) appliedFilters.push(`District: ${filterSelections.district.join(', ')}`);
+  if (filterSelections.block.length) appliedFilters.push(`Block: ${filterSelections.block.join(', ')}`);
   if (fSearch) appliedFilters.push(`Search: "${fSearch}"`);
 
-  const scopeData = getActiveScopeData();
-  const dropdownFiltered = scopeData.filter(d => {
-    if (fScheme !== 'All Schemes' && d.scheme !== fScheme) return false;
-    if (fDistrict !== 'All Districts' && d.district !== fDistrict) return false;
-    if (fBlock !== 'All Blocks' && d.block !== fBlock) return false;
-    if (fSearch && !d.village.toLowerCase().includes(fSearch) && !d.block.toLowerCase().includes(fSearch) && !d.lgdCode.toLowerCase().includes(fSearch)) return false;
-    return true;
-  });
+  const dropdownFiltered = applyDropdownFiltersTo(getActiveScopeData());
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
@@ -1351,7 +1438,7 @@ function downloadCardExcel(categoryKey) {
   const listData = filterDataByCategory(dropdownFiltered, categoryKey);
   if (!listData.length) { alert('No data available to export.'); return; }
 
-  const fSchemeVal = document.getElementById('f-scheme').value;
+  const fSchemeVal = msButtonText('scheme');
   const districtRows = buildCategoryDistrictCounts(listData);
 
   const wsSummaryData = [
@@ -1390,7 +1477,7 @@ function downloadCardPDF(categoryKey) {
   const listData = filterDataByCategory(dropdownFiltered, categoryKey);
   if (!listData.length) { alert('No data available to export.'); return; }
 
-  const fSchemeVal = document.getElementById('f-scheme').value;
+  const fSchemeVal = msButtonText('scheme');
   const districtRows = buildCategoryDistrictCounts(listData);
 
   const { jsPDF } = window.jspdf;
@@ -1609,21 +1696,35 @@ function toggleHistoryPanel() {
   }
 }
 
+// Sorts rows so District groups stay together, then Block within each District,
+// then Scheme within each Block, then Village alphabetically — used everywhere
+// filtered data is shown or downloaded so the sequence is always consistent.
+function sortSiteRows(dataset) {
+  return [...dataset].sort((a, b) => {
+    const byDistrict = (a.district || '').localeCompare(b.district || '');
+    if (byDistrict !== 0) return byDistrict;
+    const byBlock = (a.block || '').localeCompare(b.block || '');
+    if (byBlock !== 0) return byBlock;
+    const byScheme = (a.scheme || '').localeCompare(b.scheme || '');
+    if (byScheme !== 0) return byScheme;
+    return (a.village || '').localeCompare(b.village || '');
+  });
+}
+
 // Applies only Scheme/District/Block/Search (no status-tab filter) — used for
 // district-wise breakdowns that need every category represented.
 function applyDropdownFiltersTo(dataset) {
-  const fScheme = document.getElementById('f-scheme').value;
-  const fDistrict = document.getElementById('f-district').value;
-  const fBlock = document.getElementById('f-block').value;
   const fSearch = document.getElementById('f-search').value.toLowerCase().trim();
 
-  return dataset.filter(d => {
-    if (fScheme !== 'All Schemes' && d.scheme !== fScheme) return false;
-    if (fDistrict !== 'All Districts' && d.district !== fDistrict) return false;
-    if (fBlock !== 'All Blocks' && d.block !== fBlock) return false;
+  const filtered = dataset.filter(d => {
+    if (!matchesSelection(d.scheme, filterSelections.scheme)) return false;
+    if (!matchesSelection(d.district, filterSelections.district)) return false;
+    if (!matchesSelection(d.block, filterSelections.block)) return false;
     if (fSearch && !d.village.toLowerCase().includes(fSearch) && !d.block.toLowerCase().includes(fSearch) && !d.lgdCode.toLowerCase().includes(fSearch)) return false;
     return true;
   });
+
+  return sortSiteRows(filtered);
 }
 
 // Applies the currently selected Scheme/District/Block/Search + Status-tab filters
