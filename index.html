@@ -6,8 +6,6 @@
 <title>DBN Mobile Tower Roll-Out Dashboard (Live Sync)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
 <!-- jsPDF & AutoTable -->
@@ -162,10 +160,41 @@
     border-radius:4px; height:14px; width:100%;
   }
 
-  .charts-row{display:grid; grid-template-columns:1.5fr 1fr; gap:16px; margin-bottom:20px;}
-  .panel{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; box-shadow:var(--shadow);}
-  .panel h3{font-family:'IBM Plex Sans Condensed', sans-serif; font-size:15px; margin:0 0 12px; color:var(--ink);}
-  .chart-box{position:relative; height:290px; width:100%;}
+  .charts-row{display:grid; grid-template-columns:1.5fr 1fr; gap:16px; margin-bottom:20px; align-items:stretch;}
+  .panel{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; box-shadow:var(--shadow); display:flex; flex-direction:column;}
+  .panel h3{font-family:'IBM Plex Sans Condensed', sans-serif; font-size:15px; margin:0 0 14px; color:var(--ink); display:flex; align-items:center; justify-content:space-between;}
+  .panel h3 .panel-sub{font-family:'IBM Plex Mono', monospace; font-size:10px; font-weight:600; text-transform:uppercase; color:var(--ink-soft); letter-spacing:0.02em;}
+  .chart-box{position:relative; width:100%; min-height:270px; max-height:320px; overflow-y:auto; padding-right:4px;}
+
+  /* ---- Scheme-wise progress: ranked bar list ---- */
+  .rank-row{margin-bottom:13px;}
+  .rank-row:last-child{margin-bottom:0;}
+  .rank-row-top{display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:5px;}
+  .rank-row-label{font-family:'IBM Plex Sans', sans-serif; font-size:12.5px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .rank-row-value{font-family:'IBM Plex Mono', monospace; font-size:12px; font-weight:700; color:var(--ink); flex-shrink:0; white-space:nowrap;}
+  .rank-row-pct{font-weight:500; color:var(--ink-soft); margin-left:3px; font-size:10.5px;}
+  .rank-row-track{height:9px; border-radius:5px; background:var(--slate-bg); overflow:hidden;}
+  .rank-row-fill{height:100%; border-radius:5px; transition:width 0.6s cubic-bezier(.4,0,.2,1); min-width:2px;}
+  .chart-empty{font-family:'IBM Plex Sans', sans-serif; font-size:12.5px; color:var(--ink-soft); text-align:center; padding:50px 0;}
+
+  /* ---- Status split: segmented proportion bar ---- */
+  .seg-bar-track{display:flex; width:100%; height:24px; border-radius:12px; overflow:hidden; background:var(--slate-bg); margin-bottom:18px; box-shadow:inset 0 0 0 1px var(--line);}
+  .seg-bar-piece{height:100%; transition:width 0.6s cubic-bezier(.4,0,.2,1), filter 0.15s ease; min-width:3px; cursor:pointer;}
+  .seg-bar-piece:hover{filter:brightness(1.12);}
+  .seg-legend-grid{display:grid; grid-template-columns:1fr 1fr; gap:11px 14px;}
+  .seg-legend-item{display:flex; align-items:center; gap:7px; font-family:'IBM Plex Sans', sans-serif; font-size:12px;}
+  .seg-swatch{width:10px; height:10px; border-radius:3px; flex-shrink:0;}
+  .seg-legend-label{color:var(--ink-soft); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .seg-legend-value{font-family:'IBM Plex Mono', monospace; font-weight:700; color:var(--ink);}
+  .seg-legend-pct{font-family:'IBM Plex Mono', monospace; font-size:10.5px; color:var(--ink-soft); min-width:36px; text-align:right;}
+
+  .seg-tooltip{
+    position:fixed; display:none; z-index:200; background:var(--ink); color:#fff;
+    font-family:'IBM Plex Sans', sans-serif; font-size:12px; line-height:1.55;
+    padding:8px 12px; border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,0.28);
+    pointer-events:none; white-space:nowrap;
+  }
+  .seg-tooltip b{font-family:'IBM Plex Sans Condensed', sans-serif; font-size:12.5px; font-weight:700;}
 
   .table-card{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; box-shadow:var(--shadow);}
   .table-header-bar{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:12px;}
@@ -246,7 +275,8 @@
     .kpi .val{font-size:22px;}
 
     .charts-row{grid-template-columns:1fr; gap:12px;}
-    .chart-box{height:220px;}
+    .chart-box{min-height:auto; max-height:260px;}
+    .seg-legend-grid{grid-template-columns:1fr;}
 
     .table-header-bar{flex-direction:column; align-items:stretch; gap:10px;}
     .table-header-bar .export-pdf-btn{width:100%; justify-content:center;}
@@ -421,15 +451,18 @@
     <button type="button" id="kpi-download-pdf-btn">⬇ Download PDF</button>
   </div>
 
+  <!-- Hover tooltip for the "Status split" segmented bar -->
+  <div class="seg-tooltip" id="seg-tooltip"></div>
+
   <!-- Dynamic Charts -->
   <div class="charts-row">
     <div class="panel">
-      <h3>Scheme-wise progress</h3>
-      <div class="chart-box"><canvas id="chart-scheme"></canvas></div>
+      <h3>Scheme-wise progress <span class="panel-sub">Ranked by sites</span></h3>
+      <div class="chart-box" id="chart-scheme"></div>
     </div>
     <div class="panel">
-      <h3>Status split</h3>
-      <div class="chart-box"><canvas id="chart-status"></canvas></div>
+      <h3>Status split <span class="panel-sub">Share of total</span></h3>
+      <div class="chart-box" id="chart-status"></div>
     </div>
   </div>
 
@@ -483,9 +516,10 @@ let currentPage = 1;
 const pageSize = 50;
 let currentTabFilteredData = [];
 
-let chartSchemeObj = null;
-let chartStatusObj = null;
-if (window.ChartDataLabels) Chart.register(window.ChartDataLabels);
+// Holds the last-rendered data for the two custom (non-Chart.js) visuals so
+// PDF export can redraw the exact same figures shown on screen.
+let lastSchemeChartData = [];
+let lastStatusChartData = [];
 
 // Safe Robust Column Name Fetcher (Handles spaces, capitalization differences)
 function getColVal(row, possibleNames) {
@@ -1101,6 +1135,109 @@ function drawKPICardsPDF(doc, startY) {
   return startY + cardH + 16;
 }
 
+function hexToRgbArr(hex) {
+  const v = (hex || '#0E6E6B').replace('#', '');
+  return [parseInt(v.substring(0, 2), 16), parseInt(v.substring(2, 4), 16), parseInt(v.substring(4, 6), 16)];
+}
+
+// Draws the ranked "Scheme-wise progress" bar list into the PDF (mirrors the
+// on-screen rank-row list). Caps rows to whatever fits in the given height.
+function drawSchemeProgressPDF(doc, x, y, width, height) {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(18, 32, 54);
+  doc.text("Scheme-wise Progress", x, y);
+
+  if (!lastSchemeChartData.length) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 120);
+    doc.text("No data for the current filters.", x, y + 16);
+    return;
+  }
+
+  const rowH = 16;
+  const maxRows = Math.max(1, Math.floor((height - 14) / rowH));
+  const rows = lastSchemeChartData.slice(0, maxRows);
+  const maxVal = Math.max(...rows.map(s => s.value));
+  let cy = y + 14;
+
+  rows.forEach(s => {
+    const rgb = hexToRgbArr(s.color);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(59, 74, 99);
+    doc.text(s.label, x, cy, { maxWidth: width - 40 });
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(18, 32, 54);
+    doc.text(String(s.value), x + width, cy, { align: 'right' });
+
+    doc.setFillColor(230, 232, 225);
+    doc.roundedRect(x, cy + 3, width, 5, 2, 2, 'F');
+    const fillW = maxVal ? (s.value / maxVal) * width : 0;
+    doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+    if (fillW > 1) doc.roundedRect(x, cy + 3, fillW, 5, 2, 2, 'F');
+    cy += rowH;
+  });
+
+  if (lastSchemeChartData.length > rows.length) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7);
+    doc.setTextColor(120, 120, 120);
+    doc.text(`+ ${lastSchemeChartData.length - rows.length} more scheme(s) not shown`, x, cy);
+  }
+}
+
+// Draws the "Status split" segmented proportion bar + legend into the PDF
+// (mirrors the on-screen seg-bar-track / seg-legend-grid).
+function drawStatusSplitPDF(doc, x, y, width, height) {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(18, 32, 54);
+  doc.text("Status Split", x, y);
+
+  if (!lastStatusChartData.length) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 120);
+    doc.text("No data for the current filters.", x, y + 16);
+    return;
+  }
+
+  const total = lastStatusChartData.reduce((sum, d) => sum + d.value, 0) || 1;
+  const barY = y + 14;
+  const barH = 12;
+
+  doc.setFillColor(237, 239, 233);
+  doc.roundedRect(x, barY, width, barH, 4, 4, 'F');
+  let bx = x;
+  lastStatusChartData.forEach(s => {
+    const rgb = hexToRgbArr(s.color);
+    const segW = (s.value / total) * width;
+    doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+    if (segW > 0) doc.rect(bx, barY, segW, barH, 'F');
+    bx += segW;
+  });
+
+  const colW = width / 2;
+  let ly = barY + barH + 16;
+  lastStatusChartData.forEach((s, i) => {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const lx = x + col * colW;
+    const rowY = ly + row * 13;
+    const rgb = hexToRgbArr(s.color);
+    doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+    doc.rect(lx, rowY - 6, 6, 6, 'F');
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(59, 74, 99);
+    const pct = total ? (s.value / total * 100) : 0;
+    const pctStr = pct < 1 && pct > 0 ? pct.toFixed(1) : Math.round(pct);
+    doc.text(`${s.label}: ${s.value} (${pctStr}%)`, lx + 9, rowY, { maxWidth: colW - 12 });
+  });
+}
+
 // Colors matched to the tab/category accent colors used across KPI cards, pills & tab buttons
 const CATEGORY_COLORS = {
   'Total Sites Planned': '#0A4F4D',
@@ -1118,101 +1255,119 @@ const SCHEME_PALETTE = ['#0A4F4D', '#2E7D4F', '#D97706', '#DC2626', '#2563EB', '
 function renderCharts(filtered) {
   const tabColor = CATEGORY_COLORS[currentCategory] || CATEGORY_COLOR_FALLBACK;
 
+  // ================= Scheme-wise progress : ranked bar list =================
   const schemeCounts = {};
   filtered.forEach(d => { schemeCounts[d.scheme] = (schemeCounts[d.scheme] || 0) + 1; });
 
-  const ctx1 = document.getElementById('chart-scheme');
-  if (chartSchemeObj) { chartSchemeObj.destroy(); chartSchemeObj = null; }
-  
-  if (ctx1) {
-    const schemeLabels = Object.keys(schemeCounts);
-    const schemeColors = schemeLabels.map((_, i) => SCHEME_PALETTE[i % SCHEME_PALETTE.length]);
+  const schemeTotal = filtered.length;
+  const schemeEntries = Object.entries(schemeCounts).sort((a, b) => b[1] - a[1]);
+  const schemeMax = schemeEntries.length ? schemeEntries[0][1] : 0;
 
-    chartSchemeObj = new Chart(ctx1, {
-      type: 'bar',
-      data: {
-        labels: schemeLabels,
-        datasets: [{ label: 'Sites', data: Object.values(schemeCounts), backgroundColor: schemeColors }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        layout: { padding: { top: 26 } },
-        scales: {
-          y: { beginAtZero: true, grace: '12%' }
-        },
-        plugins: {
-          legend: {
-            display: true,
-            position: 'bottom',
-            labels: {
-              boxWidth: 12,
-              font: { size: 10 },
-              generateLabels: (chart) => schemeLabels.map((label, i) => ({
-                text: `${label} (${Object.values(schemeCounts)[i]})`,
-                fillStyle: schemeColors[i],
-                strokeStyle: schemeColors[i]
-              }))
-            }
-          },
-          datalabels: {
-            anchor: 'end',
-            align: 'top',
-            color: '#122036',
-            font: { weight: 'bold', size: 11 },
-            formatter: (value) => value
-          }
-        }
-      }
-    });
+  lastSchemeChartData = schemeEntries.map(([label, value], i) => ({
+    label,
+    value,
+    pct: schemeTotal ? (value / schemeTotal) * 100 : 0,
+    color: SCHEME_PALETTE[i % SCHEME_PALETTE.length]
+  }));
+
+  const schemeContainer = document.getElementById('chart-scheme');
+  if (schemeContainer) {
+    if (!lastSchemeChartData.length) {
+      schemeContainer.innerHTML = `<div class="chart-empty">No data for the current filters.</div>`;
+    } else {
+      schemeContainer.innerHTML = lastSchemeChartData.map(s => `
+        <div class="rank-row">
+          <div class="rank-row-top">
+            <span class="rank-row-label" title="${escapeHtml(s.label)}">${escapeHtml(s.label)}</span>
+            <span class="rank-row-value">${s.value}<span class="rank-row-pct">(${s.pct < 1 && s.pct > 0 ? s.pct.toFixed(1) : Math.round(s.pct)}%)</span></span>
+          </div>
+          <div class="rank-row-track">
+            <div class="rank-row-fill" style="width:${schemeMax ? (s.value / schemeMax * 100) : 0}%; background:${s.color};"></div>
+          </div>
+        </div>
+      `).join('');
+    }
   }
 
+  // ================= Status split : segmented proportion bar =================
   const catCounts = {};
   filtered.forEach(d => { catCounts[d.category] = (catCounts[d.category] || 0) + 1; });
 
-  const ctx2 = document.getElementById('chart-status');
-  if (chartStatusObj) { chartStatusObj.destroy(); chartStatusObj = null; }
+  const catTotal = filtered.length;
+  const catOrder = ['Tower Commissioned', 'WIP', 'DBN Approval Pending', 'YTS', 'Land Allocation Pending'];
+  const catLabels = Object.keys(catCounts).sort((a, b) => {
+    const ia = catOrder.indexOf(a), ib = catOrder.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
 
-  if (ctx2) {
-    const catLabels = Object.keys(catCounts);
-    const catValues = Object.values(catCounts);
-    const segmentColors = catLabels.length === 1
-      ? [tabColor]
-      : catLabels.map(label => CATEGORY_COLORS[label] || CATEGORY_COLOR_FALLBACK);
+  lastStatusChartData = catLabels.map(label => {
+    const value = catCounts[label];
+    return {
+      label,
+      value,
+      pct: catTotal ? (value / catTotal) * 100 : 0,
+      color: catLabels.length === 1 ? tabColor : (CATEGORY_COLORS[label] || CATEGORY_COLOR_FALLBACK)
+    };
+  });
 
-    chartStatusObj = new Chart(ctx2, {
-      type: 'doughnut',
-      data: {
-        labels: catLabels,
-        datasets: [{
-          data: catValues,
-          backgroundColor: segmentColors
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            display: true,
-            position: 'bottom',
-            labels: {
-              generateLabels: (chart) => catLabels.map((label, i) => ({
-                text: `${label} (${catValues[i]})`,
-                fillStyle: segmentColors[i],
-                strokeStyle: segmentColors[i]
-              }))
-            }
-          },
-          datalabels: {
-            color: '#fff',
-            font: { weight: 'bold', size: 11 },
-            formatter: (value) => value
-          }
-        }
-      }
-    });
+  const statusContainer = document.getElementById('chart-status');
+  if (statusContainer) {
+    if (!lastStatusChartData.length) {
+      statusContainer.innerHTML = `<div class="chart-empty">No data for the current filters.</div>`;
+    } else {
+      const barSegments = lastStatusChartData.map((s, i) => {
+        const isLast = i === lastStatusChartData.length - 1;
+        const divider = isLast ? '' : 'border-right:2px solid var(--card);';
+        return `<div class="seg-bar-piece" data-idx="${i}" style="width:${s.pct}%; background:${s.color}; ${divider}"></div>`;
+      }).join('');
+      const legendItems = lastStatusChartData.map(s => `
+        <div class="seg-legend-item">
+          <span class="seg-swatch" style="background:${s.color};"></span>
+          <span class="seg-legend-label" title="${escapeHtml(s.label)}">${escapeHtml(s.label)}</span>
+          <span class="seg-legend-value">${s.value}</span>
+          <span class="seg-legend-pct">${s.pct < 1 && s.pct > 0 ? s.pct.toFixed(1) : Math.round(s.pct)}%</span>
+        </div>
+      `).join('');
+      statusContainer.innerHTML = `<div class="seg-bar-track">${barSegments}</div><div class="seg-legend-grid">${legendItems}</div>`;
+
+      // Instant hover tooltip (mirrors the old Chart.js "hover to see count" behaviour)
+      statusContainer.querySelectorAll('.seg-bar-piece').forEach(el => {
+        const s = lastStatusChartData[Number(el.getAttribute('data-idx'))];
+        el.addEventListener('mouseenter', e => showSegTooltip(e, s));
+        el.addEventListener('mousemove', positionSegTooltip);
+        el.addEventListener('mouseleave', hideSegTooltip);
+        el.addEventListener('touchstart', e => { if (e.touches[0]) showSegTooltip(e.touches[0], s); }, { passive: true });
+      });
+    }
   }
+}
+
+// ---- Instant hover tooltip for the "Status split" segmented bar ----
+function showSegTooltip(e, s) {
+  const tooltip = document.getElementById('seg-tooltip');
+  if (!tooltip) return;
+  const pct = s.pct < 1 && s.pct > 0 ? s.pct.toFixed(1) : Math.round(s.pct);
+  tooltip.innerHTML = `<b>${escapeHtml(s.label)}</b><br>${s.value} sites &middot; ${pct}%`;
+  tooltip.style.display = 'block';
+  positionSegTooltip(e);
+}
+
+function positionSegTooltip(e) {
+  const tooltip = document.getElementById('seg-tooltip');
+  if (!tooltip || tooltip.style.display !== 'block') return;
+  const pad = 14;
+  let left = e.clientX + pad;
+  let top = e.clientY + pad;
+  const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
+  if (left + tw > window.innerWidth - 8) left = e.clientX - tw - pad;
+  if (top + th > window.innerHeight - 8) top = e.clientY - th - pad;
+  tooltip.style.left = left + 'px';
+  tooltip.style.top = top + 'px';
+}
+
+function hideSegTooltip() {
+  const tooltip = document.getElementById('seg-tooltip');
+  if (tooltip) tooltip.style.display = 'none';
 }
 
 function renderTable(filtered) {
@@ -1396,14 +1551,9 @@ function exportCardsChartsPDF() {
   // KPI cards (mirrors the on-screen summary cards)
   startY = drawKPICardsPDF(doc, startY);
 
-  const chart1Img = chartSchemeObj ? chartSchemeObj.toBase64Image() : null;
-  const chart2Img = chartStatusObj ? chartStatusObj.toBase64Image() : null;
-
-  if (chart1Img && chart2Img) {
-    doc.addImage(chart1Img, 'PNG', 40, startY, 360, 130);
-    doc.addImage(chart2Img, 'PNG', 420, startY, 360, 130);
-    startY += 130 + 24;
-  }
+  drawSchemeProgressPDF(doc, 40, startY + 10, 360, 130);
+  drawStatusSplitPDF(doc, 420, startY + 10, 360, 130);
+  startY += 130 + 24;
 
   drawDistrictWiseSummaryPDF(doc, dropdownFiltered, startY);
 
@@ -1591,14 +1741,9 @@ function exportFullPDF() {
   // KPI cards (mirrors the on-screen summary cards)
   startY = drawKPICardsPDF(doc, startY);
 
-  const chart1Img = chartSchemeObj ? chartSchemeObj.toBase64Image() : null;
-  const chart2Img = chartStatusObj ? chartStatusObj.toBase64Image() : null;
-
-  if (chart1Img && chart2Img) {
-    doc.addImage(chart1Img, 'PNG', 40, startY, 360, 130);
-    doc.addImage(chart2Img, 'PNG', 420, startY, 360, 130);
-    startY += 140;
-  }
+  drawSchemeProgressPDF(doc, 40, startY + 10, 360, 130);
+  drawStatusSplitPDF(doc, 420, startY + 10, 360, 130);
+  startY += 140;
 
   const tableColumns = [
     { header: '#', dataKey: 'index' },
