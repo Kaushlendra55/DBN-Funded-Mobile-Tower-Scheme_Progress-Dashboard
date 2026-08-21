@@ -53,6 +53,18 @@
   }
   .sync-btn:hover{background:#fff;}
 
+  /* ---- Signed-in user badge: avatar circle + welcome text ---- */
+  .user-profile{display:flex; align-items:center; gap:10px;}
+  .avatar-circle{
+    width:34px; height:34px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'IBM Plex Sans Condensed', sans-serif; font-weight:700; font-size:13px; color:#fff;
+    box-shadow:0 0 0 2px rgba(255,255,255,0.3);
+  }
+  .user-info{display:flex; flex-direction:column; line-height:1.3;}
+  .user-welcome{font-family:'IBM Plex Sans', sans-serif; font-size:12.5px; color:#EAF3F2;}
+  .user-welcome b{font-weight:700; color:#fff;}
+
   .scope-switcher{display:flex; gap:10px; margin-bottom:20px;}
 
   .history-panel{
@@ -398,10 +410,11 @@
   <!-- Sync Bar -->
   <div class="sync-bar">
     <div>
-      <button class="sync-btn" onclick="fetchGoogleSheetData()"><span id="sync-icon">🔄</span> Sync Live Data</button>
+      <button class="sync-btn" id="sync-live-btn" onclick="fetchGoogleSheetData()"><span id="sync-icon">🔄</span> Sync Live Data</button>
       <span id="sync-status" style="margin-left:10px; font-family:'IBM Plex Mono', monospace;">Connecting to Google Sheets...</span>
       <span id="backend-updated-status" style="margin-left:10px; font-family:'IBM Plex Mono', monospace;"></span>
     </div>
+    <div class="user-profile" id="role-badge"></div>
   </div>
 
   <!-- Scope Switcher -->
@@ -2230,21 +2243,60 @@ async function downloadHistoryPDF() {
 
 <script>
 (function(){
-  const VALID_USER = "Admin";
-  const VALID_PASS = "Admin@123";
+  // "role: admin" can do everything, including refreshing live data.
+  // "role: viewer" can only view/filter/browse and download — no data-changing controls.
+  const VALID_CREDENTIALS = [
+    { user: "Admin",     pass: "Admin@123",     role: "admin"  },
+    { user: "HODEIT",    pass: "Password@123",  role: "viewer" },
+    { user: "CEOCHIPS",  pass: "Password@123",  role: "viewer" }
+  ];
   const form = document.getElementById('login-form');
   const gate = document.getElementById('login-gate');
   const content = document.getElementById('dashboard-content');
   const errorMsg = document.getElementById('login-error');
 
+  // Shows which user is signed in as an avatar-circle + "Welcome, <name>"
+  // widget. All roles (Admin + HODEIT + CEOCHIPS) get full view/download/sync
+  // access — this dashboard has no data-editing controls for anyone, so
+  // there's nothing else to restrict at the moment.
+  function getInitials(name) {
+    const clean = (name || '').trim();
+    if (!clean) return '?';
+    return clean.length <= 2 ? clean.toUpperCase() : clean.substring(0, 2).toUpperCase();
+  }
+
+  function getAvatarColor(name) {
+    const palette = ['#0A4F4D', '#2E7D4F', '#D97706', '#2563EB', '#7C3AED', '#0891B2', '#BE185D', '#B45309'];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return palette[Math.abs(hash) % palette.length];
+  }
+
+  function applyRolePermissions(role, user) {
+    const badge = document.getElementById('role-badge');
+    if (!badge) return;
+    if (!user) { badge.innerHTML = ''; return; }
+
+    badge.innerHTML = `
+      <div class="avatar-circle" style="background:${getAvatarColor(user)};">${getInitials(user)}</div>
+      <div class="user-info">
+        <div class="user-welcome">Welcome, <b>${user}</b></div>
+      </div>
+    `;
+  }
+
   form.addEventListener('submit', function(e){
     e.preventDefault();
     const user = document.getElementById('login-user').value.trim();
     const pass = document.getElementById('login-pass').value;
-    if(user === VALID_USER && pass === VALID_PASS){
+    const matched = VALID_CREDENTIALS.find(c => c.user === user && c.pass === pass);
+    if(matched){
       gate.style.display = 'none';
       content.style.display = 'block';
       sessionStorage.setItem('tower_dash_auth', '1');
+      sessionStorage.setItem('tower_dash_role', matched.role);
+      sessionStorage.setItem('tower_dash_user', matched.user);
+      applyRolePermissions(matched.role, matched.user);
     } else {
       errorMsg.style.display = 'block';
     }
@@ -2254,6 +2306,10 @@ async function downloadHistoryPDF() {
   if(sessionStorage.getItem('tower_dash_auth') === '1'){
     gate.style.display = 'none';
     content.style.display = 'block';
+    applyRolePermissions(
+      sessionStorage.getItem('tower_dash_role') || 'viewer',
+      sessionStorage.getItem('tower_dash_user') || ''
+    );
   }
 
   // Password show/hide (eye) toggle
