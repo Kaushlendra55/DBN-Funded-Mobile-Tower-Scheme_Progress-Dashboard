@@ -668,6 +668,9 @@ function showTableSkeleton(rows = 8) {
     ).join('');
 }
 
+// Cached per-scope "last updated" timestamps (fetched together, displayed one at a time)
+let backendUpdatedAt = { '1757': null, '577': null };
+
 async function fetchLastBackendUpdate() {
   const el = document.getElementById('backend-updated-status');
   if (!el) return;
@@ -678,20 +681,28 @@ async function fetchLastBackendUpdate() {
     ]);
     if (r1.error || r2.error) throw (r1.error || r2.error);
 
-    const t1 = (r1.data && r1.data[0] && r1.data[0].updated_at) ? new Date(r1.data[0].updated_at) : null;
-    const t2 = (r2.data && r2.data[0] && r2.data[0].updated_at) ? new Date(r2.data[0].updated_at) : null;
-    const latest = [t1, t2].filter(Boolean).sort((a, b) => b - a)[0];
+    backendUpdatedAt['1757'] = (r1.data && r1.data[0] && r1.data[0].updated_at) ? new Date(r1.data[0].updated_at) : null;
+    backendUpdatedAt['577'] = (r2.data && r2.data[0] && r2.data[0].updated_at) ? new Date(r2.data[0].updated_at) : null;
 
-    if (latest) {
-      const dateStr = latest.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-      const timeStr = latest.toLocaleTimeString();
-      el.innerText = `| Last Updated On: ${dateStr}, ${timeStr}`;
-    } else {
-      el.innerText = '';
-    }
+    renderBackendUpdatedDisplay();
   } catch (err) {
     // Column may not exist yet (e.g. before running the "add updated_at column" SQL) - fail silently.
     console.error('Could not fetch backend last-updated time:', err);
+    el.innerText = '';
+  }
+}
+
+// Shows the "Last Updated On" timestamp for whichever scope (1757 / 577) is
+// currently selected, instead of the newest of the two combined.
+function renderBackendUpdatedDisplay() {
+  const el = document.getElementById('backend-updated-status');
+  if (!el) return;
+  const latest = backendUpdatedAt[currentScope];
+  if (latest) {
+    const dateStr = latest.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const timeStr = latest.toLocaleTimeString();
+    el.innerText = `| Last Updated On: ${dateStr}, ${timeStr}`;
+  } else {
     el.innerText = '';
   }
 }
@@ -820,6 +831,7 @@ function switchScope(scope) {
   document.getElementById('scope-577').classList.toggle('active', scope === '577');
   currentCategory = 'Total Sites Planned';
   currentPage = 1;
+  renderBackendUpdatedDisplay();
   initFilterOptions();
   applyFilters();
 }
