@@ -121,7 +121,7 @@
   .kpi.kpi-clickable:hover{box-shadow:0 4px 14px rgba(10,79,77,0.18); transform:translateY(-2px);}
 
   .kpi-download-menu{
-    position:fixed; display:none; z-index:100; background:var(--ink); border-radius:8px;
+    position:absolute; display:none; z-index:100; background:var(--ink); border-radius:8px;
     box-shadow:0 8px 24px rgba(0,0,0,0.28); padding:6px; min-width:170px;
   }
   .kpi-download-menu.open{display:block;}
@@ -160,11 +160,11 @@
     border-radius:4px; height:14px; width:100%;
   }
 
-  .charts-row{display:grid; grid-template-columns:1.5fr 1fr; gap:16px; margin-bottom:20px; align-items:stretch;}
+  .charts-row{display:grid; grid-template-columns:1.5fr 1fr; gap:16px; margin-bottom:20px; align-items:start;}
   .panel{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; box-shadow:var(--shadow); display:flex; flex-direction:column;}
   .panel h3{font-family:'IBM Plex Sans Condensed', sans-serif; font-size:15px; margin:0 0 14px; color:var(--ink); display:flex; align-items:center; justify-content:space-between;}
   .panel h3 .panel-sub{font-family:'IBM Plex Mono', monospace; font-size:10px; font-weight:600; text-transform:uppercase; color:var(--ink-soft); letter-spacing:0.02em;}
-  .chart-box{position:relative; width:100%; min-height:270px; max-height:320px; overflow-y:auto; padding-right:4px;}
+  .chart-box{position:relative; width:100%; max-height:320px; overflow-y:auto; padding-right:4px;}
 
   /* ---- Scheme-wise progress: ranked bar list ---- */
   .rank-row{margin-bottom:13px;}
@@ -275,7 +275,7 @@
     .kpi .val{font-size:22px;}
 
     .charts-row{grid-template-columns:1fr; gap:12px;}
-    .chart-box{min-height:auto; max-height:260px;}
+    .chart-box{max-height:260px;}
     .seg-legend-grid{grid-template-columns:1fr;}
 
     .table-header-bar{flex-direction:column; align-items:stretch; gap:10px;}
@@ -589,36 +589,70 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // KPI card click -> show Excel/PDF download popup
   let pendingDownloadCategory = null;
+  let pendingDownloadCard = null;
   const kpiMenu = document.getElementById('kpi-download-menu');
+  const reportWrap = document.getElementById('report-content');
+
+  function positionKpiMenu(card) {
+    const rect = card.getBoundingClientRect();
+    const wrapRect = reportWrap.getBoundingClientRect();
+    const menuWidth = 190;
+    let left = rect.left - wrapRect.left;
+    if (left + menuWidth > wrapRect.width - 10) left = wrapRect.width - menuWidth - 10;
+    if (left < 0) left = 0;
+    kpiMenu.style.left = left + 'px';
+    kpiMenu.style.top = (rect.bottom - wrapRect.top + 6) + 'px';
+  }
 
   document.getElementById('kpi-row').addEventListener('click', function(e) {
     const card = e.target.closest('.kpi-clickable');
     if (!card) return;
     e.stopPropagation();
-    pendingDownloadCategory = card.getAttribute('data-category');
 
-    const rect = card.getBoundingClientRect();
-    const menuWidth = 190;
-    let left = rect.left;
-    if (left + menuWidth > window.innerWidth - 10) left = window.innerWidth - menuWidth - 10;
-    kpiMenu.style.left = left + 'px';
-    kpiMenu.style.top = (rect.bottom + 6) + 'px';
+    // Second click on the SAME card closes the menu instead of reopening it.
+    if (kpiMenu.classList.contains('open') && pendingDownloadCard === card) {
+      kpiMenu.classList.remove('open');
+      pendingDownloadCategory = null;
+      pendingDownloadCard = null;
+      return;
+    }
+
+    pendingDownloadCategory = card.getAttribute('data-category');
+    pendingDownloadCard = card;
+    positionKpiMenu(card);
     kpiMenu.classList.add('open');
+  });
+
+  // Keep the menu glued to its card while the page scrolls (menu is
+  // absolutely positioned inside the scrolling wrapper, so re-checking on
+  // scroll only matters if the card's own size/layout shifts underneath it).
+  window.addEventListener('scroll', function() {
+    if (kpiMenu.classList.contains('open') && pendingDownloadCard) {
+      positionKpiMenu(pendingDownloadCard);
+    }
+  }, { passive: true });
+  window.addEventListener('resize', function() {
+    if (kpiMenu.classList.contains('open') && pendingDownloadCard) {
+      positionKpiMenu(pendingDownloadCard);
+    }
   });
 
   document.addEventListener('click', function(e) {
     if (!kpiMenu.contains(e.target) && !e.target.closest('.kpi-clickable')) {
       kpiMenu.classList.remove('open');
+      pendingDownloadCard = null;
     }
   });
 
   document.getElementById('kpi-download-excel-btn').addEventListener('click', function() {
     if (pendingDownloadCategory) downloadCardExcel(pendingDownloadCategory);
     kpiMenu.classList.remove('open');
+    pendingDownloadCard = null;
   });
   document.getElementById('kpi-download-pdf-btn').addEventListener('click', function() {
     if (pendingDownloadCategory) downloadCardPDF(pendingDownloadCategory);
     kpiMenu.classList.remove('open');
+    pendingDownloadCard = null;
   });
 });
 
@@ -822,6 +856,10 @@ function renderTabs() {
 // Multi-select state for Scheme / District / Block filters.
 // An empty array for a key means "All" (no filter applied for that field).
 let filterSelections = { scheme: [], district: [], block: [] };
+// Tracks which of the above were auto-filled by the search box (as opposed to
+// chosen manually via the checkbox dropdowns), so a new/cleared search term
+// can undo its own guesses without touching the user's manual choices.
+let searchAutoFilled = { scheme: false, district: false, block: false };
 const MS_CONFIG = {
   scheme: { allLabel: 'All Schemes', singular: 'Scheme' },
   district: { allLabel: 'All Districts', singular: 'District' },
@@ -873,6 +911,7 @@ function toggleMsPanel(key) {
 
 function toggleMsAll(key) {
   filterSelections[key] = [];
+  searchAutoFilled[key] = false;
   const panel = document.getElementById('ms-panel-' + key);
   panel.querySelectorAll('input[type="checkbox"]').forEach((cb, i) => { cb.checked = (i === 0); });
   refreshMsButtonLabel(key);
@@ -883,6 +922,7 @@ function toggleMsOption(key, value) {
   const sel = filterSelections[key];
   const idx = sel.indexOf(value);
   if (idx >= 0) sel.splice(idx, 1); else sel.push(value);
+  searchAutoFilled[key] = false;
 
   const panel = document.getElementById('ms-panel-' + key);
   const allCb = panel.querySelector('.ms-option-all input');
@@ -951,31 +991,79 @@ function onSearchInput() {
   searchDebounceTimer = setTimeout(runSearchFilter, 300);
 }
 
+// Undoes whatever Scheme/District/Block the search box auto-selected for a
+// previous search term. Never touches a selection the user picked manually
+// via the checkbox dropdowns (those have searchAutoFilled[key] === false).
+function clearSearchAutoFilledSelections() {
+  let blockNeedsRefresh = false;
+
+  if (searchAutoFilled.scheme) {
+    filterSelections.scheme = [];
+    searchAutoFilled.scheme = false;
+    refreshMsButtonLabel('scheme');
+  }
+  if (searchAutoFilled.district) {
+    filterSelections.district = [];
+    searchAutoFilled.district = false;
+    refreshMsButtonLabel('district');
+    blockNeedsRefresh = true;
+  }
+  if (searchAutoFilled.block) {
+    filterSelections.block = [];
+    searchAutoFilled.block = false;
+    blockNeedsRefresh = true;
+  }
+  if (blockNeedsRefresh) updateBlockOptions();
+}
+
 function runSearchFilter() {
   const searchVal = document.getElementById('f-search').value.toLowerCase().trim();
 
-  if (searchVal && filterSelections.district.length === 0) {
+  // Start clean: undo whatever this search box auto-selected last time before
+  // working out what the current search text implies.
+  clearSearchAutoFilledSelections();
+
+  if (searchVal) {
     const scopeData = getActiveScopeData();
 
-    const matches = scopeData.filter(d => {
-      if (!matchesSelection(d.scheme, filterSelections.scheme)) return false;
-      return d.village.toLowerCase().includes(searchVal) || d.block.toLowerCase().includes(searchVal) || d.lgdCode.toLowerCase().includes(searchVal);
-    });
+    // Match on the raw search text first (before applying the Scheme filter) so we
+    // can work out which Scheme the search text uniquely belongs to.
+    const rawMatches = scopeData.filter(d =>
+      d.village.toLowerCase().includes(searchVal) || d.block.toLowerCase().includes(searchVal) || d.lgdCode.toLowerCase().includes(searchVal)
+    );
 
-    if (matches.length) {
-      const uniqueDistricts = [...new Set(matches.map(d => d.district).filter(Boolean))];
-      if (uniqueDistricts.length === 1) {
-        filterSelections.district = uniqueDistricts;
-        refreshMsButtonLabel('district');
-
-        const districtScopedBlocks = [...new Set(scopeData.filter(d => uniqueDistricts.includes(d.district)).map(d => d.block).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-
-        if (filterSelections.block.length === 0) {
-          const blockMatches = matches.filter(d => d.district === uniqueDistricts[0]);
-          const uniqueBlocks = [...new Set(blockMatches.map(d => d.block).filter(Boolean))];
-          if (uniqueBlocks.length === 1) filterSelections.block = uniqueBlocks;
+    if (rawMatches.length) {
+      // Auto-fill Scheme if the search text uniquely belongs to one scheme
+      if (filterSelections.scheme.length === 0) {
+        const uniqueSchemes = [...new Set(rawMatches.map(d => d.scheme).filter(Boolean))];
+        if (uniqueSchemes.length === 1) {
+          filterSelections.scheme = uniqueSchemes;
+          searchAutoFilled.scheme = true;
+          refreshMsButtonLabel('scheme');
         }
-        renderMsPanel('block', districtScopedBlocks);
+      }
+
+      const matches = rawMatches.filter(d => matchesSelection(d.scheme, filterSelections.scheme));
+
+      if (filterSelections.district.length === 0 && matches.length) {
+        const uniqueDistricts = [...new Set(matches.map(d => d.district).filter(Boolean))];
+        if (uniqueDistricts.length === 1) {
+          filterSelections.district = uniqueDistricts;
+          searchAutoFilled.district = true;
+          refreshMsButtonLabel('district');
+
+          const districtScopedBlocks = [...new Set(scopeData.filter(d => uniqueDistricts.includes(d.district)).map(d => d.block).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+          if (filterSelections.block.length === 0) {
+            const blockMatches = matches.filter(d => d.district === uniqueDistricts[0]);
+            const uniqueBlocks = [...new Set(blockMatches.map(d => d.block).filter(Boolean))];
+            if (uniqueBlocks.length === 1) {
+              filterSelections.block = uniqueBlocks;
+              searchAutoFilled.block = true;
+            }
+          }
+          renderMsPanel('block', districtScopedBlocks);
+        }
       }
     }
   }
@@ -985,6 +1073,7 @@ function runSearchFilter() {
 
 function resetFilters() {
   filterSelections = { scheme: [], district: [], block: [] };
+  searchAutoFilled = { scheme: false, district: false, block: false };
   document.getElementById('f-search').value = '';
   currentCategory = 'Total Sites Planned';
   initFilterOptions();
